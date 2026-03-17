@@ -1,3 +1,18 @@
 include ':FtcRobotController'
 include ':TeamCode'
 include ':RuckigNative'
+
+includeBuild('external/road-runner-wrapper') {
+    dependencySubstitution {
+        substitute module('com.acmerobotics.roadrunner:core') using project(':core')
+        substitute module('com.acmerobotics.roadrunner:actions') using project(':actions')
+        substitute module('com.acmerobotics.roadrunner:ftc') using project(':roadrunner-ftc')
+    }
+}
+
+includeBuild('external/ftc-dashboard') {
+    dependencySubstitution {
+        substitute module('com.acmerobotics.dashboard:dashboard') using project(':FtcDashboard')
+        substitute module('com.acmerobotics.dashboard:core') using project(':DashboardCore')
+    }
+}

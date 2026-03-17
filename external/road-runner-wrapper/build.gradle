@@ -1,0 +1,19 @@
+// Wrapper build that compiles road-runner core/actions from the git submodule source.
+// Uses KGP 2.2.20 to match ftc-dashboard and avoid Kotlin platform alignment conflicts.
+buildscript {
+    repositories {
+        mavenCentral()
+        google()
+    }
+    dependencies {
+        classpath 'com.android.tools.build:gradle:8.7.0'
+        classpath 'org.jetbrains.kotlin:kotlin-gradle-plugin:2.2.20'
+    }
+}
+
+allprojects {
+    repositories {
+        mavenCentral()
+        google()
+    }
+}

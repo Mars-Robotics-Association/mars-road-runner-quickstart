@@ -1,3 +1,12 @@
 [submodule "ruckig"]
 	path = ruckig
 	url = https://github.com/pantor/ruckig.git
+[submodule "external/road-runner"]
+	path = external/road-runner
+	url = https://github.com/acmerobotics/road-runner
+[submodule "external/road-runner-ftc"]
+	path = external/road-runner-ftc
+	url = https://github.com/acmerobotics/road-runner-ftc
+[submodule "external/ftc-dashboard"]
+	path = external/ftc-dashboard
+	url = https://github.com/acmerobotics/ftc-dashboard

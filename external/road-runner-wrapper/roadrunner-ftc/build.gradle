@@ -1,0 +1,44 @@
+apply plugin: 'com.android.library'
+apply plugin: 'kotlin-android'
+
+android {
+    namespace 'com.acmerobotics.roadrunner'
+    compileSdkVersion 29
+
+    defaultConfig {
+        minSdkVersion 24
+        //noinspection ExpiredTargetSdkVersion
+        targetSdkVersion 28
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+
+    kotlinOptions {
+        jvmTarget = '1.8'
+        freeCompilerArgs += ['-Xjvm-default=all-compatibility']
+    }
+
+    sourceSets {
+        main {
+            java.srcDirs = ['../../road-runner-ftc/RoadRunner/src/main/java']
+            assets.srcDirs = ['../../road-runner-ftc/RoadRunner/src/main/assets']
+            manifest.srcFile '../../road-runner-ftc/RoadRunner/src/main/AndroidManifest.xml'
+        }
+    }
+}
+
+dependencies {
+    api "org.firstinspires.ftc:RobotCore:10.0.0"
+    api "org.firstinspires.ftc:Hardware:10.0.0"
+
+    api project(':core')
+    api project(':actions')
+
+    // dashboard:dashboard is substituted from the ftc-dashboard composite build
+    api 'com.acmerobotics.dashboard:dashboard:0.4.10'
+
+    implementation 'com.fasterxml.jackson.core:jackson-databind:2.12.7'
+}
