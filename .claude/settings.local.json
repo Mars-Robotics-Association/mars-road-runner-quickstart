@@ -6,14 +6,43 @@
       "WebFetch(domain:raw.githubusercontent.com)",
       "WebFetch(domain:api.github.com)",
       "Bash(git submodule:*)",
+      "WebFetch(domain:docs.limelightvision.io)",
+      "WebFetch(domain:www.chiefdelphi.com)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:reddit.com)",
+      "Bash(git add:*)",
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git commit:*)",
+      "Bash(./gradlew build:*)",
+      "Bash(./gradlew:*)",
       "Bash(./gradlew assembleDebug)",
-      "Bash(cp C:/Users/mjhan/Documents/git/mars-road-runner-quickstart-sdk11/local.properties C:/Users/mjhan/Documents/git/mars-road-runner-quickstart-sdk11/external/road-runner-ftc/local.properties)",
-      "Bash(cp C:/Users/mjhan/Documents/git/mars-road-runner-quickstart-sdk11/local.properties C:/Users/mjhan/Documents/git/mars-road-runner-quickstart-sdk11/external/ftc-dashboard/local.properties)",
       "Read(//c/Program Files/Eclipse Adoptium/**)",
       "Read(//c/Program Files/Java/**)",
       "Read(//c/Program Files/Microsoft/**)",
       "Bash(where java:*)",
-      "Bash(winget install:*)"
+      "Bash(winget install:*)",
+      "Bash(jar tf:*)",
+      "Bash(git ls-tree:*)",
+      "WebFetch(domain:docs.wpilib.org)",
+      "Bash(head:*)",
+      "WebFetch(domain:www.gobilda.com)",
+      "Bash(xargs grep:*)"
+    ]
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/format-java.sh\"",
+            "timeout": 30
+          }
+        ]
+      }
     ]
   }
 }
