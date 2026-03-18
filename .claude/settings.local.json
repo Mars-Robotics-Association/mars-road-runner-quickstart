@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:maven.brott.dev)",
+      "WebFetch(domain:acmerobotics.z13.web.core.windows.net)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "WebFetch(domain:api.github.com)",
+      "Bash(git submodule:*)",
+      "Bash(./gradlew assembleDebug)",
+      "Bash(cp C:/Users/mjhan/Documents/git/mars-road-runner-quickstart-sdk11/local.properties C:/Users/mjhan/Documents/git/mars-road-runner-quickstart-sdk11/external/road-runner-ftc/local.properties)",
+      "Bash(cp C:/Users/mjhan/Documents/git/mars-road-runner-quickstart-sdk11/local.properties C:/Users/mjhan/Documents/git/mars-road-runner-quickstart-sdk11/external/ftc-dashboard/local.properties)",
+      "Read(//c/Program Files/Eclipse Adoptium/**)",
+      "Read(//c/Program Files/Java/**)",
+      "Read(//c/Program Files/Microsoft/**)",
+      "Bash(where java:*)",
+      "Bash(winget install:*)"
+    ]
+  }
+}

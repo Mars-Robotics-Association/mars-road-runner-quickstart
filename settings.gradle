@@ -1,5 +1,8 @@
 include ':FtcRobotController'
 include ':TeamCode'
+include ':WpiMath'
+include ':ControlLib'
+include ':ControlLab'
 include ':RuckigNative'
 
 includeBuild('external/road-runner-wrapper') {
