@@ -1,4 +1,4 @@
-package org.firstinspires.ftc.teamcode.robot;
+package org.marsroboticsassociation.controllib.control;
 
 import org.junit.jupiter.api.Test;
 import org.marsroboticsassociation.controllib.sim.FlywheelMotorSim;
@@ -28,9 +28,6 @@ class VelocityMotorPFTest {
     /**
      * Construct a VelocityMotorPF wired to {@code adapter} with a simulated clock.
      * Uses gearRatio=1 and motorPPR=1 so TPS is the native unit throughout.
-     *
-     * @param timeSecs single-element array holding the simulated clock in seconds;
-     *                 caller must advance it before each {@code controller.update(dt)} call.
      */
     private static VelocityMotorPF makeSystem(FlywheelTestFixture.SimMotorAdapter adapter,
                                               double[] timeSecs) {
@@ -47,22 +44,20 @@ class VelocityMotorPFTest {
                 /*gearRatio=*/1.0,
                 /*motorPPR=*/1.0,
                 /*motorPowerChangeTolerance=*/0.005,
-                FlywheelTestFixture.HUB_VOLTAGE,
-                "test",
-                adapter,
                 config,
+                adapter,
                 clock);
     }
 
     /**
      * Advance the simulated clock by a normally-distributed dt (mean 20 ms, σ 4 ms),
-     * then step the controller and plant.  Returns the actual dt in seconds.
+     * then step the controller and plant. Returns the actual dt in seconds.
      */
     private static double step(VelocityMotorPF controller,
                                 FlywheelTestFixture.SimMotorAdapter adapter,
                                 FlywheelMotorSim sim, double[] timeSecs, Random rng) {
         double dt = Math.max(0.001, 0.020 + rng.nextGaussian() * 0.004);
-        timeSecs[0] += dt;   // advance clock before update so trajectory sees correct elapsed time
+        timeSecs[0] += dt;
         controller.update(dt);
         sim.step(dt, adapter.lastPower, FlywheelTestFixture.HUB_VOLTAGE);
         return dt;
@@ -148,15 +143,12 @@ class VelocityMotorPFTest {
         controller.setTPS(2000);
         Random rng = FlywheelTestFixture.makeRng();
 
-        // Spin up to steady state
         for (int i = 0; i < 800; i++) step(controller, adapter, sim, timeSecs, rng);
         assertTrue(controller.isAtTargetSpeed(), "should be at speed before disturbance");
 
-        // Apply 0.1 V extra drag for ~1 s (50 steps at 20 ms)
         sim.setDisturbanceVoltage(-kS - 0.1);
         for (int i = 0; i < 50; i++) step(controller, adapter, sim, timeSecs, rng);
 
-        // Restore and allow ~6 s (300 steps) for kP feedback to recover
         sim.setDisturbanceVoltage(-kS);
         for (int i = 0; i < 300; i++) step(controller, adapter, sim, timeSecs, rng);
 
@@ -173,7 +165,6 @@ class VelocityMotorPFTest {
 
         controller.setTPS(2000);
         Random rng = FlywheelTestFixture.makeRng();
-        // Two steps covers ~40 ms — far too short for the jerk-limited ramp to finish
         step(controller, adapter, sim, timeSecs, rng);
         step(controller, adapter, sim, timeSecs, rng);
 
@@ -183,16 +174,6 @@ class VelocityMotorPFTest {
 
     @Test
     void testKpSuppressedDuringAcceleration() {
-        // Two controllers on identical sims: kP=0 (pure FF) vs kP=default.
-        // accelMax is set low (500) so the trajectory reaches peak acceleration — making
-        // kPEffective = kP * (1 - 500/500) = 0 during the constant-acceleration phase.
-        // At that point both controllers must output identical power regardless of velocity error.
-        // After spin-up with a disturbance, the kP controller should produce more corrective power.
-        //
-        // Note: with the default accelMax=2500 and target=2000 TPS, the peak trajectory
-        // acceleration is ~1633 TPS/s² (never reaches accelMax), so this test deliberately
-        // uses accelMax=500. With that value the trajectory profile is trapezoidal
-        // (1633 >> 500), so there IS a constant-acceleration phase where kPEffective=0.
         VelocityMotorPF.VelocityMotorPFConfig zeroKpConfig = new VelocityMotorPF.VelocityMotorPFConfig();
         zeroKpConfig.kP = 0.0;
         zeroKpConfig.accelMax = 500;
@@ -214,10 +195,6 @@ class VelocityMotorPFTest {
 
         double dt = 0.020;
 
-        // 15 steps = 0.30 s. The jerk ramp takes accelMax/jerkIncreasing = 500/2000 = 0.25 s
-        // (12.5 steps), so by step 15 we're in the constant-acceleration phase where a = accelMax.
-        // kPEffective = kP * (1 - 500/500) = 0 → both controllers output pure feedforward.
-        // Since FF depends only on the trajectory state (identical for both), powers must match.
         for (int i = 0; i < 15; i++) {
             timeFF[0] += dt; timePF[0] += dt;
             controllerFF.update(dt); controllerPF.update(dt);
@@ -228,7 +205,6 @@ class VelocityMotorPFTest {
         assertEquals(adapterFF.lastPower, adapterPF.lastPower, 1e-9,
                 "At peak trajectory acceleration kPEffective=0, so both controllers must output identical FF power");
 
-        // Spin up the rest of the way to steady state (~800 more steps at 20 ms = 16 s)
         for (int i = 0; i < 800; i++) {
             timeFF[0] += dt; timePF[0] += dt;
             controllerFF.update(dt); controllerPF.update(dt);
@@ -236,13 +212,9 @@ class VelocityMotorPFTest {
             simPF.step(dt, adapterPF.lastPower, FlywheelTestFixture.HUB_VOLTAGE);
         }
 
-        // Apply a 2 V drag disturbance to both sims — large enough (~420 TPS drop) to exceed the
-        // sim's 20 TPS velocity quantization so the LPF detects it and creates a clear velocity error.
         simFF.setDisturbanceVoltage(-kS - 2.0);
         simPF.setDisturbanceVoltage(-kS - 2.0);
 
-        // 50 steps (1 s) for the LPF (6.5 Hz, τ ≈ 24 ms) to fully settle.
-        // At steady state a = 0, so kPEffective = kP, and the PF controller adds kP * ve to power.
         for (int i = 0; i < 50; i++) {
             timeFF[0] += dt; timePF[0] += dt;
             controllerFF.update(dt); controllerPF.update(dt);

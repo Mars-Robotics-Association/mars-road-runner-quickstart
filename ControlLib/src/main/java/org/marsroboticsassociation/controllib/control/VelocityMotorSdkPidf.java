@@ -1,17 +1,23 @@
-package org.firstinspires.ftc.teamcode.robot;
-
-import com.qualcomm.robotcore.hardware.DcMotor;
-import com.qualcomm.robotcore.hardware.DcMotorEx;
-import com.qualcomm.robotcore.hardware.DcMotorSimple.Direction;
-import com.qualcomm.robotcore.hardware.HardwareMap;
+package org.marsroboticsassociation.controllib.control;
 
 import java.util.function.LongSupplier;
 
 import edu.wpi.first.math.MathUtil;
+import org.marsroboticsassociation.controllib.hardware.IMotor;
 import org.marsroboticsassociation.controllib.util.SetOnChange;
 import org.marsroboticsassociation.controllib.util.TelemetryAddData;
 
+/**
+ * Velocity-controlled motor using the SDK's built-in PIDF controller.
+ * <p>
+ * The motor must be set to {@code RUN_USING_ENCODER} mode before being passed to this
+ * constructor. Motor direction and zero-power behavior are configured externally on the
+ * {@link IMotor}.
+ * <p>
+ * {@link #setPower(double)} is not supported; use {@link #setRPM}/{@link #setTPS} instead.
+ */
 public class VelocityMotorSdkPidf extends VelocityMotorBase {
+
     public static class MotorPIDFConfig {
         public double Kv;
         public double nominalVoltage;
@@ -23,7 +29,6 @@ public class VelocityMotorSdkPidf extends VelocityMotorBase {
         public double jerkIncreasing;
         public double jerkDecreasing;
         public double lpfCutoff;
-        public Direction motorDirection = Direction.FORWARD;
 
         public MotorPIDFConfig(double maxTPS) {
             Kv = 32767.0 / maxTPS;
@@ -48,21 +53,14 @@ public class VelocityMotorSdkPidf extends VelocityMotorBase {
     private final SetOnChange<Double> Kd;
     private final SetOnChange<Double> Kv;
 
-
-    public VelocityMotorSdkPidf(HardwareMap hardwareMap, String deviceName, TelemetryAddData telemetry, MotorPIDFConfig config, double gearRatio, double motorPPR) {
-        super(hardwareMap, telemetry, gearRatio, motorPPR, 0.05, config.maxAccel, config.jerkIncreasing, config.jerkDecreasing, 1.0, deviceName);
+    public VelocityMotorSdkPidf(TelemetryAddData telemetry, double gearRatio, double motorPPR,
+                                 MotorPIDFConfig config, IMotor motor) {
+        super(telemetry, gearRatio, motorPPR, 0.05, motor,
+                config.maxAccel, config.jerkIncreasing, config.jerkDecreasing, 1.0);
         this.config = config;
-        motors[0].setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.FLOAT);
-        motors[0].setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
-        motors[0].setMode(DcMotor.RunMode.RUN_USING_ENCODER);
-        if (config.motorDirection != null) {
-            motors[0].setDirection(config.motorDirection);
-        }
-        motorVelocitySetpoint = SetOnChange.ofDouble(0.0, 1.0, motors[0]::setVelocity);
-        Runnable updatePIDF = () -> motors[0].setVelocityPIDFCoefficients(
-                config.Kp,
-                config.Ki,
-                config.Kd,
+        motorVelocitySetpoint = SetOnChange.ofDouble(0.0, 1.0, motor::setVelocity);
+        Runnable updatePIDF = () -> motor.setVelocityPIDFCoefficients(
+                config.Kp, config.Ki, config.Kd,
                 config.Kv * config.nominalVoltage / getVoltage());
         voltageFactor = SetOnChange.ofDouble(config.nominalVoltage / getVoltage(), 0.025, (vf) -> updatePIDF.run());
         Kp = SetOnChange.ofDouble(config.Kp, (kp) -> updatePIDF.run());
@@ -71,23 +69,31 @@ public class VelocityMotorSdkPidf extends VelocityMotorBase {
         Kv = SetOnChange.ofDouble(config.Kv, (kv) -> updatePIDF.run());
     }
 
-    public VelocityMotorSdkPidf(HardwareMap hardwareMap, String deviceName, TelemetryAddData telemetry, MotorPIDFConfig config, MotorType motorType) {
-        this(hardwareMap, deviceName, telemetry, config, motorType.getGearRatio(), motorType.getPulsesPerRevolution());
+    public VelocityMotorSdkPidf(TelemetryAddData telemetry, double gearRatio, double motorPPR,
+                                 MotorPIDFConfig config, IMotor motor, String name) {
+        super(telemetry, gearRatio, motorPPR, 0.05, motor, name,
+                config.maxAccel, config.jerkIncreasing, config.jerkDecreasing, 1.0);
+        this.config = config;
+        motorVelocitySetpoint = SetOnChange.ofDouble(0.0, 1.0, motor::setVelocity);
+        Runnable updatePIDF = () -> motor.setVelocityPIDFCoefficients(
+                config.Kp, config.Ki, config.Kd,
+                config.Kv * config.nominalVoltage / getVoltage());
+        voltageFactor = SetOnChange.ofDouble(config.nominalVoltage / getVoltage(), 0.025, (vf) -> updatePIDF.run());
+        Kp = SetOnChange.ofDouble(config.Kp, (kp) -> updatePIDF.run());
+        Ki = SetOnChange.ofDouble(config.Ki, (ki) -> updatePIDF.run());
+        Kd = SetOnChange.ofDouble(config.Kd, (kd) -> updatePIDF.run());
+        Kv = SetOnChange.ofDouble(config.Kv, (kv) -> updatePIDF.run());
     }
 
-    /** For unit tests only — bypasses HardwareMap, LynxModule, HubHelper, and motor hardware init. */
+    /** Package-private constructor for tests — injects a custom clock. */
     VelocityMotorSdkPidf(TelemetryAddData telemetry, double gearRatio, double motorPPR,
-                          double motorPowerChangeTolerance, double hubVoltage,
-                          String deviceName, DcMotorEx motor, MotorPIDFConfig config,
-                          LongSupplier clock) {
-        super(telemetry, gearRatio, motorPPR, motorPowerChangeTolerance, hubVoltage, deviceName, motor,
+                          MotorPIDFConfig config, IMotor motor, LongSupplier clock) {
+        super(telemetry, gearRatio, motorPPR, 0.05, motor,
                 config.maxAccel, config.jerkIncreasing, config.jerkDecreasing, 1.0, clock);
         this.config = config;
         motorVelocitySetpoint = SetOnChange.ofDouble(0.0, 1.0, motor::setVelocity);
         Runnable updatePIDF = () -> motor.setVelocityPIDFCoefficients(
-                config.Kp,
-                config.Ki,
-                config.Kd,
+                config.Kp, config.Ki, config.Kd,
                 config.Kv * config.nominalVoltage / getVoltage());
         voltageFactor = SetOnChange.ofDouble(config.nominalVoltage / getVoltage(), 0.025, (vf) -> updatePIDF.run());
         Kp = SetOnChange.ofDouble(config.Kp, (kp) -> updatePIDF.run());
@@ -100,7 +106,6 @@ public class VelocityMotorSdkPidf extends VelocityMotorBase {
     protected void setTPS(double tps) {
         tps = MathUtil.clamp(tps, -config.maxSettableVelocity, config.maxSettableVelocity);
         trajectory.setTarget(tps);
-        motorMode.set(DcMotor.RunMode.RUN_USING_ENCODER);
     }
 
     @Override
@@ -108,10 +113,9 @@ public class VelocityMotorSdkPidf extends VelocityMotorBase {
         return trajectory.getAcceleration() == 0 && Math.abs(getTpsFiltered() - trajectory.getTarget()) < 30;
     }
 
+    @Override
     public void setPower(double power) {
-        power = MathUtil.clamp(power, -1.0, 1.0);
-        motorMode.set(DcMotor.RunMode.RUN_WITHOUT_ENCODER);
-        super.setPower(power);
+        throw new UnsupportedOperationException("VelocityMotorSdkPidf is velocity-only; use setRPM/setTPS");
     }
 
     @Override
@@ -130,22 +134,19 @@ public class VelocityMotorSdkPidf extends VelocityMotorBase {
         } else {
             motorVelocitySetpoint.set(trajectory.getVelocity());
         }
-
     }
 
     @Override
     public void writeTelemetry() {
         super.writeTelemetry();
-        telemetry.addData(deviceNames[0] + " Voltage Factor", "%.3f", voltageFactor.get());
-        telemetry.addData(deviceNames[0] + " TPS LPF", "%.1f", getTpsFiltered());
-        telemetry.addData(deviceNames[0] + " RPM LPF", "%.1f", tpsToRpm(getTpsFiltered()));
+        telemetry.addData(name + " Voltage Factor", "%.3f", voltageFactor.get());
+        telemetry.addData(name + " TPS LPF", "%.1f", getTpsFiltered());
+        telemetry.addData(name + " RPM LPF", "%.1f", tpsToRpm(getTpsFiltered()));
     }
 
     @Override
     public void stop() {
         trajectory.setTarget(0.0);
-        motorMode.set(DcMotor.RunMode.RUN_WITHOUT_ENCODER);
-        motorVelocitySetpoint.set(0.0);
-        super.setPower(0.0);
+        motor.setVelocity(0);
     }
 }
