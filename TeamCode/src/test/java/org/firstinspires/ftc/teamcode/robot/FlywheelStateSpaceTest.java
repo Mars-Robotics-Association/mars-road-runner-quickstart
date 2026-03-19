@@ -25,8 +25,7 @@ class FlywheelStateSpaceTest {
     private static FlywheelStateSpace makeSystem(FlywheelTestFixture.SimMotorAdapter adapter) {
         return new FlywheelStateSpace(
                 adapter,
-                (caption, format, value) -> {},
-                "test");
+                (caption, format, value) -> {});
     }
 
     /** Advance by a normally-distributed dt (mean 20 ms, σ 4 ms), step controller and plant.

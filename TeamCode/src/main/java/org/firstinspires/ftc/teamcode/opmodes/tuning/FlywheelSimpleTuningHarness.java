@@ -58,7 +58,7 @@ public class FlywheelSimpleTuningHarness extends LinearOpMode {
         group.setMode(DcMotorEx.RunMode.RUN_WITHOUT_ENCODER);
         group.setZeroPowerBehavior(DcMotorEx.ZeroPowerBehavior.FLOAT);
         QuantizedPowerMotor flywheelMotor = new QuantizedPowerMotor(group, 0.01);
-        FlywheelSimple flywheel = new FlywheelSimple(telemetry::addData, "flywheel", flywheelMotor);
+        FlywheelSimple flywheel = new FlywheelSimple(telemetry::addData, flywheelMotor);
 
         telemetry.addLine("Right bumper → spin at TARGET_TPS");
         telemetry.addLine("Left bumper  → coast");

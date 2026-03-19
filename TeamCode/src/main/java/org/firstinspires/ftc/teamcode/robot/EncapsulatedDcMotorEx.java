@@ -21,10 +21,12 @@ import org.marsroboticsassociation.controllib.hardware.IMotor;
 public class EncapsulatedDcMotorEx implements DcMotorEx, IMotor {
     private final DcMotorEx motor;
     @Nullable final LynxModule hub;
+    private final String deviceName;
 
     public EncapsulatedDcMotorEx(HardwareMap hardwareMap, String deviceName) {
         motor = hardwareMap.get(DcMotorEx.class, deviceName);
         this.hub = HubHelper.getHubForMotor(motor, hardwareMap);
+        this.deviceName = deviceName;
     }
 
     protected EncapsulatedDcMotorEx(DcMotorEx motor) {
@@ -32,6 +34,15 @@ public class EncapsulatedDcMotorEx implements DcMotorEx, IMotor {
         this.hub = (motor instanceof EncapsulatedDcMotorEx)
                 ? ((EncapsulatedDcMotorEx) motor).hub
                 : null;
+        this.deviceName = null;
+    }
+
+    @Override
+    public String getName() {
+        if (motor instanceof IMotor) {
+            return ((IMotor) motor).getName();
+        }
+        return deviceName;
     }
 
     @Override
