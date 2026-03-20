@@ -1,10 +1,20 @@
 include ':FtcRobotController'
 include ':TeamCode'
-include ':WpiMath'
-include ':ControlLib'
-include ':ControlLab'
-include ':RuckigNative'
 
+// --- MarsCommonFtc modules ---
+include ':WpiMath'
+project(':WpiMath').projectDir = file('MarsCommonFtc/WpiMath')
+
+include ':ControlLib'
+project(':ControlLib').projectDir = file('MarsCommonFtc/ControlLib')
+
+include ':ControlLab'
+project(':ControlLab').projectDir = file('MarsCommonFtc/ControlLab')
+
+include ':RuckigNative'
+project(':RuckigNative').projectDir = file('MarsCommonFtc/RuckigNative')
+
+// --- External composite builds ---
 includeBuild('external/road-runner-wrapper') {
     dependencySubstitution {
         substitute module('com.acmerobotics.roadrunner:core') using project(':core')
