@@ -7,3 +7,6 @@
 [submodule "external/ftc-dashboard"]
 	path = external/ftc-dashboard
 	url = https://github.com/acmerobotics/ftc-dashboard
+[submodule "MarsCommonFtc"]
+	path = MarsCommonFtc
+	url = https://github.com/Mars-Robotics-Association/MarsCommonFtc.git
