@@ -17,7 +17,10 @@ apply from: '../build.dependencies.gradle'
 
 repositories {
     maven {
-        url = 'https://mymaven.bylazar.com/releases'
+        url = rootProject.file('libs/acme-local-maven').toURI()
+    }
+    maven {
+        url = 'https://maven.brott.dev/'
     }
 }
 

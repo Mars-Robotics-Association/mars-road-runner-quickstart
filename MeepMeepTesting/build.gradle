@@ -8,7 +8,9 @@ java {
 }
 
 repositories {
-    maven { url = 'https://maven.brott.dev/' }
+    maven {
+        url = rootProject.file('libs/acme-local-maven').toURI()
+    }
 }
 
 dependencies {

@@ -1,12 +1,6 @@
-[submodule "external/road-runner"]
-	path = external/road-runner
-	url = https://github.com/acmerobotics/road-runner
-[submodule "external/road-runner-ftc"]
-	path = external/road-runner-ftc
-	url = https://github.com/acmerobotics/road-runner-ftc
-[submodule "external/ftc-dashboard"]
-	path = external/ftc-dashboard
-	url = https://github.com/acmerobotics/ftc-dashboard
 [submodule "MarsCommonFtc"]
 	path = MarsCommonFtc
 	url = https://github.com/Mars-Robotics-Association/MarsCommonFtc.git
+[submodule "libs/acme-local-maven"]
+	path = libs/acme-local-maven
+	url = https://github.com/Mars-Robotics-Association/AcmeLocalMaven.git

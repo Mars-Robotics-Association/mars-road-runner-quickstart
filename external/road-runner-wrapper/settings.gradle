@@ -1,4 +1,0 @@
-rootProject.name = 'road-runner-wrapper'
-include ':core'
-include ':actions'
-include ':roadrunner-ftc'
