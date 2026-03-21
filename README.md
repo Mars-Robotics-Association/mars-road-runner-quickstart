@@ -6,16 +6,20 @@ sync with upstream.
 
 ## What `mars` adds on top of `master`
 
-### New Gradle modules
+### MarsCommonFtc submodule
+
+Shared modules live in the [MarsCommonFtc](https://github.com/Mars-Robotics-Association/MarsCommonFtc) repository, consumed as a git submodule at `MarsCommonFtc/`. This allows multiple MARS FTC teams to share the same code with version pinning via tags.
 
 | Module | Purpose |
 |--------|---------|
-| `WpiMath` | Port of WPILib's math library (geometry, kinematics, estimators, trajectories, controllers, filters, state-space) |
 | `ControlLib` | MARS control library — motion profiles, filters, localization, simulation, and hardware helpers |
 | `ControlLab` | Desktop Java app for offline tuning and signal visualization (uses XChart + ControlLib) |
+| `WpiMath` | Port of WPILib's math library (geometry, kinematics, estimators, trajectories, controllers, filters, state-space) |
 | `RuckigNative` | Android NDK module that wraps the [Ruckig](https://ruckig.com/) C++ trajectory planner via JNI |
 
-### New git submodules (`external/`)
+See the [MarsCommonFtc setup guide](MarsCommonFtc/docs/SETUP.md) for detailed instructions on adding it to other robot projects.
+
+### External git submodules (`external/`)
 
 | Submodule | What it is |
 |-----------|-----------|
@@ -23,7 +27,6 @@ sync with upstream.
 | `external/road-runner-ftc` | Road Runner FTC adapter (source) |
 | `external/ftc-dashboard` | FTC Dashboard (source) |
 | `external/road-runner-wrapper` | Composite build wrapper so all three above are built from source instead of pulled from Maven |
-| `ruckig` | Ruckig C++ header-only library (used by `RuckigNative`) |
 
 ### `ControlLib` contents (`org.marsroboticsassociation.controllib`)
 
@@ -40,6 +43,11 @@ sync with upstream.
 **Localization**
 - `FieldPoseEstimator` — fuses odometry with sensor updates for field-relative pose
 - `localization/pinpoint/` — odometry driver for the goBILDA Pinpoint odometry computer
+
+**Motor controllers**
+- `FlywheelSimple` / `FlywheelStateSpace` — flywheel velocity controllers
+- `MotorBase` / `VelocityMotorBase` — base classes for motor control
+- `VelocityMotorPF` / `VelocityMotorSdkPidf` — velocity motor implementations
 
 **Hardware helpers**
 - `FtcMotors` — motor utility wrappers
@@ -71,7 +79,7 @@ JNI wrapper via CMake so the same `RuckigController` class works off-robot.
 
 ## Cloning
 
-This branch uses nested submodules. Clone with:
+This repo uses nested submodules. Clone with:
 
 ```bash
 git clone --recurse-submodules <repo-url>
@@ -93,3 +101,6 @@ git submodule update --init --recursive
 - `WpiMath` and `ControlLib` are plain Java modules; they run on the desktop
   JVM and on Android equally. `ControlLib` uses a shadow JAR to relocate EJML
   and avoid classpath conflicts on the robot.
+- Shared modules are included via `projectDir` redirects in `settings.gradle`
+  pointing into `MarsCommonFtc/`. Project names (`:ControlLib`, `:WpiMath`, etc.)
+  are unchanged, so all existing dependency declarations work as-is.
