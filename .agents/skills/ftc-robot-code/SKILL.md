@@ -3,10 +3,6 @@ name: ftc-robot-code
 description: Apply FTC SDK conventions, gotchas, and Road Runner pitfalls when writing or reviewing robot Java code. Use when writing any FTC OpMode, subsystem, or Road Runner code.
 ---
 
-## Project structure
-
-Teleop base class is `DrivingBase` in `TeamCode/opmodes/teleop/`.
-
 ## Language target
 
 See `sourceCompatibility`/`targetCompatibility` in `build.common.gradle` for the Java version.

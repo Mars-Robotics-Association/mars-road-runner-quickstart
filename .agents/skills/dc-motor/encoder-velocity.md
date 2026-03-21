@@ -16,7 +16,7 @@ span), this yields 20 TPS quantization (1 tick / 50 ms), matching observed telem
 REV does not publish firmware source, so this is an educated guess calibrated to match real
 behavior.
 
-The sim model (`EncoderSim`) implements this as a 6-entry ring buffer with no added noise.
+The sim model (`EncoderSim`, in `MarsCommonFtc/ControlLib`) implements this as a 6-entry ring buffer with no added noise.
 All velocity "noise" comes from integer tick rounding propagating through the ring buffer —
 matching the real hardware, where the encoder counters are digital edge counters with no analog
 noise source.
@@ -48,7 +48,7 @@ readings. In practice this adds more noise than it removes:
 
 ## Noise characteristics (from telemetry analysis)
 
-Telemetry data from PayloadTest runs confirms:
+Telemetry data from motor characterization runs confirms:
 
 | Metric | Value |
 |---|---|
@@ -57,12 +57,12 @@ Telemetry data from PayloadTest runs confirms:
 | Effective measurement window | ~50 ms (consistent with 6-entry / 5-interval ring buffer) |
 | Mean loop time (observed) | ~13 ms |
 
-The unit test sim (`EncoderSim` inside `FlywheelMotorSim`) produces pure quantization noise
-with no added Gaussian noise. Sim-sweep analysis showed that with 20 TPS quantization steps,
-the velocity LPF needs a cutoff ≤ 6.5 Hz to keep filtered velocity within 10 TPS of truth, and
-the acceleration LPF needs ≤ 4 Hz to keep below 50 TPS². These findings were applied to
-production configs (`VelocityMotorPF.measurementLpfCutoffHz = 6.5`,
-`FlywheelStateSpace.accelLpfCutoffHz = 4.0`).
+The unit test sim (`EncoderSim` inside `FlywheelMotorSim`, both in `MarsCommonFtc/ControlLib`)
+produces pure quantization noise with no added Gaussian noise. Sim-sweep analysis showed that
+with 20 TPS quantization steps, the velocity LPF needs a cutoff ≤ 6.5 Hz to keep filtered
+velocity within 10 TPS of truth, and the acceleration LPF needs ≤ 4 Hz to keep below 50 TPS².
+These findings were applied to production configs in `MarsCommonFtc/ControlLib`
+(`VelocityMotorPF.measurementLpfCutoffHz = 6.5`, `FlywheelStateSpace.accelLpfCutoffHz = 4.0`).
 
 ## Ports 0 and 3 vs ports 1 and 2
 

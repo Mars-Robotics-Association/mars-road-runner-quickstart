@@ -28,8 +28,8 @@ double b = FtcMotors.calcB(motor, kV);   // = (kT/R) * (kV − kE), where kE = 1
 `createDCMotorSystem` needs. `b` near zero is normal for flywheels with good bearings; negative
 indicates noise or model mismatch.
 
-Use `FtcMotors` in `org.marsroboticsassociation.controllib.util` for both `DCMotor` constants
-(RS-555 / goBILDA Yellow Jacket) and these helpers.
+Use `FtcMotors` in `MarsCommonFtc/ControlLib` (`org.marsroboticsassociation.controllib.util`)
+for both `DCMotor` constants (RS-555 / goBILDA Yellow Jacket) and these helpers.
 
 ## LinearSystemLoop voltage
 
