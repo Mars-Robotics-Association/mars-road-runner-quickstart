@@ -52,9 +52,9 @@ echo "Checking out tag: $SELECTED_TAG"
 
 git checkout "tags/$SELECTED_TAG" --quiet
 
-cd "$SCRIPT_DIR"
-echo "Updating submodules recursively..."
+echo "Updating nested submodules..."
 git submodule update --init --recursive
+cd "$SCRIPT_DIR"
 
 echo ""
 echo "MarsCommonFtc updated to $SELECTED_TAG."

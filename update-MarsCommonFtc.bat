@@ -66,14 +66,14 @@ if errorlevel 1 (
     exit /b 1
 )
 
-cd /d "%~dp0"
-echo Updating submodules recursively...
+echo Updating nested submodules...
 git submodule update --init --recursive
 if errorlevel 1 (
     echo ERROR: Submodule update failed.
     pause
     exit /b 1
 )
+cd /d "%~dp0"
 
 echo.
 echo MarsCommonFtc updated to %SELECTED_TAG%.
