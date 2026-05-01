@@ -68,4 +68,5 @@ fi
 
 JAVA=$(find_java21) || JAVA=java  # fall back to PATH java (will error if too old)
 
-"$JAVA" -jar "$JAR" --aosp --replace "$FILE_PATH"
+"$JAVA" -jar "$JAR" --aosp --skip-removing-unused-imports --replace "$FILE_PATH"
+

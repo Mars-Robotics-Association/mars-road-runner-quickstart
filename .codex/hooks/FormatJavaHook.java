@@ -42,6 +42,7 @@ public class FormatJavaHook {
                 "-jar",
                 jarPath.toString(),
                 "--aosp",
+                "--skip-removing-unused-imports",
                 "--replace",
                 target.toString()
             ).inheritIO().start();
