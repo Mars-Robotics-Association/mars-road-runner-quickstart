@@ -31,9 +31,10 @@ public class EncapsulatedDcMotorEx implements DcMotorEx, IMotor {
 
     protected EncapsulatedDcMotorEx(DcMotorEx motor) {
         this.motor = motor;
-        this.hub = (motor instanceof EncapsulatedDcMotorEx)
-                ? ((EncapsulatedDcMotorEx) motor).hub
-                : null;
+        this.hub =
+                (motor instanceof EncapsulatedDcMotorEx)
+                        ? ((EncapsulatedDcMotorEx) motor).hub
+                        : null;
         this.deviceName = null;
     }
 
@@ -46,9 +47,15 @@ public class EncapsulatedDcMotorEx implements DcMotorEx, IMotor {
     }
 
     @Override
+    public int getPosition() {
+        return motor.getCurrentPosition();
+    }
+
+    @Override
     public double getHubVoltage() {
-        if (hub == null) throw new UnsupportedOperationException(
-                "getHubVoltage() requires construction from HardwareMap");
+        if (hub == null)
+            throw new UnsupportedOperationException(
+                    "getHubVoltage() requires construction from HardwareMap");
         return hub.getInputVoltage(VoltageUnit.VOLTS);
     }
 
@@ -99,7 +106,7 @@ public class EncapsulatedDcMotorEx implements DcMotorEx, IMotor {
      * Sets the velocity of the motor
      *
      * @param angularRate the desired angular rate, in units per second
-     * @param unit        the units in which angularRate is expressed
+     * @param unit the units in which angularRate is expressed
      * @see #getVelocity(AngleUnit)
      */
     @Override
@@ -130,13 +137,12 @@ public class EncapsulatedDcMotorEx implements DcMotorEx, IMotor {
     }
 
     /**
-     * Sets the PID control coefficients for one of the PID modes of this motor.
-     * Note that in some controller implementations, setting the PID coefficients for one
-     * mode on a motor might affect other modes on that motor, or might affect the PID
-     * coefficients used by other motors on the same controller (this is not true on the
-     * REV Expansion Hub).
+     * Sets the PID control coefficients for one of the PID modes of this motor. Note that in some
+     * controller implementations, setting the PID coefficients for one mode on a motor might affect
+     * other modes on that motor, or might affect the PID coefficients used by other motors on the
+     * same controller (this is not true on the REV Expansion Hub).
      *
-     * @param mode            either {@link RunMode#RUN_USING_ENCODER} or {@link RunMode#RUN_TO_POSITION}
+     * @param mode either {@link RunMode#RUN_USING_ENCODER} or {@link RunMode#RUN_TO_POSITION}
      * @param pidCoefficients the new coefficients to use when in that mode on this motor
      * @see #getPIDCoefficients(RunMode)
      * @deprecated Use {@link #setPIDFCoefficients(RunMode, PIDFCoefficients)} instead
@@ -148,22 +154,23 @@ public class EncapsulatedDcMotorEx implements DcMotorEx, IMotor {
     }
 
     /**
-     * {@link #setPIDFCoefficients} is a superset enhancement to {@link #setPIDCoefficients}. In addition
-     * to the proportional, integral, and derivative coefficients previously supported, a feed-forward
-     * coefficient may also be specified. Further, a selection of motor control algorithms is offered:
-     * the originally-shipped Legacy PID algorithm, and a PIDF algorithm which avails itself of the
-     * feed-forward coefficient. Note that the feed-forward coefficient is not used by the Legacy PID
-     * algorithm; thus, the feed-forward coefficient must be indicated as zero if the Legacy PID
-     * algorithm is used. Also: the internal implementation of these algorithms may be different: it
-     * is not the case that the use of PIDF with the F term as zero necessarily exhibits exactly the
-     * same behavior as the use of the LegacyPID algorithm, though in practice they will be quite close.
-     * <p>
-     * Readers are reminded that {@link DcMotor.RunMode#RUN_TO_POSITION} mode makes use of <em>both</em>
-     * the coefficients set for RUN_TO_POSITION <em>and</em> the coefficients set for RUN_WITH_ENCODER,
-     * due to the fact that internally the RUN_TO_POSITION logic calculates an on-the-fly velocity goal
-     * on each control cycle, then (logically) runs the RUN_WITH_ENCODER logic. Because of that double-
-     * layering, only the proportional ('p') coefficient makes logical sense for use in the RUN_TO_POSITION
-     * coefficients.
+     * {@link #setPIDFCoefficients} is a superset enhancement to {@link #setPIDCoefficients}. In
+     * addition to the proportional, integral, and derivative coefficients previously supported, a
+     * feed-forward coefficient may also be specified. Further, a selection of motor control
+     * algorithms is offered: the originally-shipped Legacy PID algorithm, and a PIDF algorithm
+     * which avails itself of the feed-forward coefficient. Note that the feed-forward coefficient
+     * is not used by the Legacy PID algorithm; thus, the feed-forward coefficient must be indicated
+     * as zero if the Legacy PID algorithm is used. Also: the internal implementation of these
+     * algorithms may be different: it is not the case that the use of PIDF with the F term as zero
+     * necessarily exhibits exactly the same behavior as the use of the LegacyPID algorithm, though
+     * in practice they will be quite close.
+     *
+     * <p>Readers are reminded that {@link DcMotor.RunMode#RUN_TO_POSITION} mode makes use of
+     * <em>both</em> the coefficients set for RUN_TO_POSITION <em>and</em> the coefficients set for
+     * RUN_WITH_ENCODER, due to the fact that internally the RUN_TO_POSITION logic calculates an
+     * on-the-fly velocity goal on each control cycle, then (logically) runs the RUN_WITH_ENCODER
+     * logic. Because of that double- layering, only the proportional ('p') coefficient makes
+     * logical sense for use in the RUN_TO_POSITION coefficients.
      *
      * @param mode
      * @param pidfCoefficients
@@ -172,13 +179,14 @@ public class EncapsulatedDcMotorEx implements DcMotorEx, IMotor {
      * @see #getPIDFCoefficients(RunMode)
      */
     @Override
-    public void setPIDFCoefficients(RunMode mode, PIDFCoefficients pidfCoefficients) throws UnsupportedOperationException {
+    public void setPIDFCoefficients(RunMode mode, PIDFCoefficients pidfCoefficients)
+            throws UnsupportedOperationException {
         motor.setPIDFCoefficients(mode, pidfCoefficients);
     }
 
     /**
-     * A shorthand for setting the PIDF coefficients for the {@link DcMotor.RunMode#RUN_USING_ENCODER}
-     * mode. {@link MotorControlAlgorithm#PIDF} is used.
+     * A shorthand for setting the PIDF coefficients for the {@link
+     * DcMotor.RunMode#RUN_USING_ENCODER} mode. {@link MotorControlAlgorithm#PIDF} is used.
      *
      * @param p
      * @param i
@@ -194,13 +202,13 @@ public class EncapsulatedDcMotorEx implements DcMotorEx, IMotor {
     /**
      * A shorthand for setting the PIDF coefficients for the {@link DcMotor.RunMode#RUN_TO_POSITION}
      * mode. {@link MotorControlAlgorithm#PIDF} is used.
-     * <p>
-     * Readers are reminded that {@link DcMotor.RunMode#RUN_TO_POSITION} mode makes use of <em>both</em>
-     * the coefficients set for RUN_TO_POSITION <em>and</em> the coefficients set for RUN_WITH_ENCODER,
-     * due to the fact that internally the RUN_TO_POSITION logic calculates an on-the-fly velocity goal
-     * on each control cycle, then (logically) runs the RUN_WITH_ENCODER logic. Because of that double-
-     * layering, only the proportional ('p') coefficient makes logical sense for use in the RUN_TO_POSITION
-     * coefficients.
+     *
+     * <p>Readers are reminded that {@link DcMotor.RunMode#RUN_TO_POSITION} mode makes use of
+     * <em>both</em> the coefficients set for RUN_TO_POSITION <em>and</em> the coefficients set for
+     * RUN_WITH_ENCODER, due to the fact that internally the RUN_TO_POSITION logic calculates an
+     * on-the-fly velocity goal on each control cycle, then (logically) runs the RUN_WITH_ENCODER
+     * logic. Because of that double- layering, only the proportional ('p') coefficient makes
+     * logical sense for use in the RUN_TO_POSITION coefficients.
      *
      * @param p
      * @see #setVelocityPIDFCoefficients(double, double, double, double)
@@ -212,8 +220,7 @@ public class EncapsulatedDcMotorEx implements DcMotorEx, IMotor {
     }
 
     /**
-     * Returns the PID control coefficients used when running in the indicated mode
-     * on this motor.
+     * Returns the PID control coefficients used when running in the indicated mode on this motor.
      *
      * @param mode either {@link RunMode#RUN_USING_ENCODER} or {@link RunMode#RUN_TO_POSITION}
      * @return the PID control coefficients used when running in the indicated mode on this motor
@@ -226,8 +233,7 @@ public class EncapsulatedDcMotorEx implements DcMotorEx, IMotor {
     }
 
     /**
-     * Returns the PIDF control coefficients used when running in the indicated mode
-     * on this motor.
+     * Returns the PIDF control coefficients used when running in the indicated mode on this motor.
      *
      * @param mode either {@link RunMode#RUN_USING_ENCODER} or {@link RunMode#RUN_TO_POSITION}
      * @return the PIDF control coefficients used when running in the indicated mode on this motor
@@ -285,7 +291,7 @@ public class EncapsulatedDcMotorEx implements DcMotorEx, IMotor {
      * Sets the current alert for this motor
      *
      * @param current current alert
-     * @param unit    current units
+     * @param unit current units
      */
     @Override
     public void setCurrentAlert(double current, CurrentUnit unit) {
@@ -303,10 +309,10 @@ public class EncapsulatedDcMotorEx implements DcMotorEx, IMotor {
     }
 
     /**
-     * Returns the assigned type for this motor. If no particular motor type has been
-     * configured, then {@link MotorConfigurationType#getUnspecifiedMotorType()} will be returned.
-     * Note that the motor type for a given motor is initially assigned in the robot
-     * configuration user interface, though it may subsequently be modified using methods herein.
+     * Returns the assigned type for this motor. If no particular motor type has been configured,
+     * then {@link MotorConfigurationType#getUnspecifiedMotorType()} will be returned. Note that the
+     * motor type for a given motor is initially assigned in the robot configuration user interface,
+     * though it may subsequently be modified using methods herein.
      *
      * @return the assigned type for this motor
      */
@@ -377,7 +383,7 @@ public class EncapsulatedDcMotorEx implements DcMotorEx, IMotor {
      * <p>Note that the change of the zero power behavior to {@link ZeroPowerBehavior#FLOAT FLOAT}
      * remains in effect even following the return of this method. <STRONG>This is a breaking
      * change</STRONG> in behavior from previous releases of the SDK. Consider, for example, the
-     * following code sequence:</p>
+     * following code sequence:
      *
      * <pre>
      *     motor.setZeroPowerBehavior(ZeroPowerBehavior.BRAKE); // method not available in previous releases
@@ -385,15 +391,15 @@ public class EncapsulatedDcMotorEx implements DcMotorEx, IMotor {
      *     motor.setPower(0.0);
      * </pre>
      *
-     * <p>Starting from this release, this sequence of code will leave the motor floating. Previously,
-     * the motor would have been left braked.</p>
+     * <p>Starting from this release, this sequence of code will leave the motor floating.
+     * Previously, the motor would have been left braked.
      *
      * @see #setPower(double)
      * @see #getPowerFloat()
      * @see #setZeroPowerBehavior(ZeroPowerBehavior)
-     * @deprecated This method is deprecated in favor of direct use of
-     * {@link #setZeroPowerBehavior(ZeroPowerBehavior) setZeroPowerBehavior()} and
-     * {@link #setPower(double) setPower()}.
+     * @deprecated This method is deprecated in favor of direct use of {@link
+     *     #setZeroPowerBehavior(ZeroPowerBehavior) setZeroPowerBehavior()} and {@link
+     *     #setPower(double) setPower()}.
      */
     @Deprecated
     @Override
@@ -413,16 +419,15 @@ public class EncapsulatedDcMotorEx implements DcMotorEx, IMotor {
     }
 
     /**
-     * Sets the desired encoder target position to which the motor should advance or retreat
-     * and then actively hold thereat. This behavior is similar to the operation of a servo.
-     * The maximum speed at which this advance or retreat occurs is governed by the power level
-     * currently set on the motor. While the motor is advancing or retreating to the desired
-     * taget position, {@link #isBusy()} will return true.
+     * Sets the desired encoder target position to which the motor should advance or retreat and
+     * then actively hold thereat. This behavior is similar to the operation of a servo. The maximum
+     * speed at which this advance or retreat occurs is governed by the power level currently set on
+     * the motor. While the motor is advancing or retreating to the desired taget position, {@link
+     * #isBusy()} will return true.
      *
-     * <p>Note that adjustment to a target position is only effective when the motor is in
-     * {@link RunMode#RUN_TO_POSITION RUN_TO_POSITION}
-     * RunMode. Note further that, clearly, the motor must be equipped with an encoder in order
-     * for this mode to function properly.</p>
+     * <p>Note that adjustment to a target position is only effective when the motor is in {@link
+     * RunMode#RUN_TO_POSITION RUN_TO_POSITION} RunMode. Note further that, clearly, the motor must
+     * be equipped with an encoder in order for this mode to function properly.
      *
      * @param position the desired encoder target position
      * @see #getCurrentPosition()
@@ -459,9 +464,9 @@ public class EncapsulatedDcMotorEx implements DcMotorEx, IMotor {
     }
 
     /**
-     * Returns the current reading of the encoder for this motor. The units for this reading,
-     * that is, the number of ticks per revolution, are specific to the motor/encoder in question,
-     * and thus are not specified here.
+     * Returns the current reading of the encoder for this motor. The units for this reading, that
+     * is, the number of ticks per revolution, are specific to the motor/encoder in question, and
+     * thus are not specified here.
      *
      * @return the current reading of the encoder for this motor
      * @see #getTargetPosition()
@@ -519,11 +524,10 @@ public class EncapsulatedDcMotorEx implements DcMotorEx, IMotor {
     }
 
     /**
-     * Sets the power level of the motor, expressed as a fraction of the maximum
-     * possible power / speed supported according to the run mode in which the
-     * motor is operating.
+     * Sets the power level of the motor, expressed as a fraction of the maximum possible power /
+     * speed supported according to the run mode in which the motor is operating.
      *
-     * <p>Setting a power level of zero will brake the motor</p>
+     * <p>Setting a power level of zero will brake the motor
      *
      * @param power the new power level of the motor, a value in the interval [-1.0, 1.0]
      * @see #getPower()
@@ -557,9 +561,9 @@ public class EncapsulatedDcMotorEx implements DcMotorEx, IMotor {
     }
 
     /**
-     * Returns a string suitable for display to the user as to the type of device.
-     * Note that this is a device-type-specific name; it has nothing to do with the
-     * name by which a user might have configured the device in a robot configuration.
+     * Returns a string suitable for display to the user as to the type of device. Note that this is
+     * a device-type-specific name; it has nothing to do with the name by which a user might have
+     * configured the device in a robot configuration.
      *
      * @return device manufacturer and name
      */
@@ -597,9 +601,7 @@ public class EncapsulatedDcMotorEx implements DcMotorEx, IMotor {
         motor.resetDeviceConfigurationForOpMode();
     }
 
-    /**
-     * Closes this device
-     */
+    /** Closes this device */
     @Override
     public void close() {
         motor.close();
