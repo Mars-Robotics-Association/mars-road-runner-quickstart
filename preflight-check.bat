@@ -419,6 +419,37 @@ if !SUB_COUNT!==0 (
     echo              Or run: update-MarsCommonFtc
     set /a WARNINGS+=1
 )
+git config core.hooksPath .githooks >nul 2>&1
+git update-index --chmod=+x .githooks/pre-commit >nul 2>&1
+if not exist "!USERPROFILE!\.githooks\google-java-format.jar" (
+    echo       [WARN] google-java-format.jar not found at !USERPROFILE!\.githooks\google-java-format.jar
+    set DL_CHOICE=
+    set /p DL_CHOICE="             Download latest release now? [Y/N] "
+    if /i "!DL_CHOICE!"=="Y" (
+        if not exist "!USERPROFILE!\.githooks" mkdir "!USERPROFILE!\.githooks"
+        echo              Fetching latest release info...
+        set GJF_JAR=!USERPROFILE!\.githooks\google-java-format.jar
+        set DL_URL=
+        set DL_OK=0
+        for /f "usebackq delims=" %%U in (`powershell -NoProfile -ExecutionPolicy Bypass -Command "$r=Invoke-RestMethod 'https://api.github.com/repos/google/google-java-format/releases/latest'; ($r.assets | Where-Object { $_.name -like '*all-deps*' }).browser_download_url"`) do (
+            if "!DL_URL!"=="" set DL_URL=%%U
+        )
+        if not "!DL_URL!"=="" (
+            powershell -NoProfile -ExecutionPolicy Bypass -Command "Invoke-WebRequest -Uri '!DL_URL!' -OutFile '!GJF_JAR!'" >nul 2>&1
+            if exist "!GJF_JAR!" (
+                echo       [OK]   Downloaded google-java-format.jar
+                set DL_OK=1
+            )
+        )
+        if !DL_OK!==0 (
+            echo       [WARN] Download failed -- install manually from https://github.com/google/google-java-format/releases/latest
+            set /a WARNINGS+=1
+        )
+    ) else (
+        echo              Pre-commit Java formatting will be skipped until installed
+        set /a WARNINGS+=1
+    )
+)
 
 :: ============================================================
 :: CHECK 10/10: Gradle offline mode

@@ -40,6 +40,7 @@ fi
 
 if [[ $goto_summary -eq 0 ]]; then
   while IFS='=' read -r key val; do
+    val="${val%$'\r'}"
     case "$key" in
       PREFLIGHT_JAVA) REQ_JAVA="$val" ;;
       PREFLIGHT_COMPILE_SDK) REQ_SDK="$val" ;;
@@ -110,7 +111,7 @@ if [[ $goto_summary -eq 0 ]]; then
       echo "      [WARN] Could not reach $ADVISORY_INDEX_URL"
       WARNINGS=$((WARNINGS+1))
     else
-      LATEST_PATH="$(echo "$ADVISORY_INDEX_HTML" | grep -Eo 'href="[0-9]{4}-[0-9]{2}-[0-9]{2}"' | head -n1 || true)"
+      LATEST_PATH="$(echo "$ADVISORY_INDEX_HTML" | grep -Eo '[0-9]{4}-[0-9]{2}-[0-9]{2}' | head -n1 || true)"
       if [[ -z "$LATEST_PATH" ]]; then
         echo "      [WARN] Could not parse latest advisory URL from OpenJDK"
         WARNINGS=$((WARNINGS+1))
@@ -119,11 +120,7 @@ if [[ $goto_summary -eq 0 ]]; then
         LATEST_PATH="${LATEST_PATH%\"}"
         LATEST_URL="https://openjdk.org/groups/vulnerability/advisories/${LATEST_PATH}"
         LATEST_HTML="$(curl -fsSL "$LATEST_URL" 2>/dev/null || true)"
-        AFFECTED_LINE="$(echo "$LATEST_HTML" | grep -Eo 'affected versions are [^<]+' | head -n1 || true)"
-        REQUIRED_FOR_MAJOR=""
-        if [[ -n "$AFFECTED_LINE" ]]; then
-          REQUIRED_FOR_MAJOR="$(echo "$AFFECTED_LINE" | grep -Eo "${REQ_JAVA}([.][0-9]+[.][0-9]+|u[0-9]+)" | head -n1 || true)"
-        fi
+        REQUIRED_FOR_MAJOR="$(echo "$LATEST_HTML" | grep -Eo "${REQ_JAVA}([.][0-9]+[.][0-9]+|u[0-9]+)" | head -n1 || true)"
         if [[ -z "$REQUIRED_FOR_MAJOR" ]]; then
           echo "      [WARN] Could not find JDK $REQ_JAVA baseline in latest advisory"
           WARNINGS=$((WARNINGS+1))
@@ -273,6 +270,33 @@ if [[ $goto_summary -eq 0 ]]; then
       echo "             Run: git submodule update --init --recursive"
       echo "             Or run: ./update-MarsCommonFtc.sh"
       WARNINGS=$((WARNINGS+1))
+    fi
+    git config core.hooksPath .githooks
+    git update-index --chmod=+x .githooks/pre-commit 2>/dev/null || true
+    if [[ ! -f "$HOME/.githooks/google-java-format.jar" ]]; then
+      echo "      [WARN] google-java-format.jar not found at ~/.githooks/google-java-format.jar"
+      if command -v curl >/dev/null 2>&1; then
+        read -r -p "             Download latest release now? [Y/N] " DL_CHOICE
+        if [[ "${DL_CHOICE^^}" == "Y" ]]; then
+          mkdir -p "$HOME/.githooks"
+          DL_URL=$(curl -fsSL "https://api.github.com/repos/google/google-java-format/releases/latest" \
+            | grep '"browser_download_url"' | grep 'all-deps' | head -n1 \
+            | sed 's/.*"browser_download_url": "\([^"]*\)".*/\1/')
+          if [[ -n "$DL_URL" ]] && curl -fsSL -o "$HOME/.githooks/google-java-format.jar" "$DL_URL"; then
+            echo "      [OK]   Downloaded $(basename "$DL_URL")"
+          else
+            echo "      [WARN] Download failed — install manually from https://github.com/google/google-java-format/releases/latest"
+            WARNINGS=$((WARNINGS+1))
+          fi
+        else
+          echo "             Pre-commit Java formatting will be skipped until installed"
+          WARNINGS=$((WARNINGS+1))
+        fi
+      else
+        echo "             Pre-commit Java formatting will be skipped until installed"
+        echo "             Download: https://github.com/google/google-java-format/releases/latest"
+        WARNINGS=$((WARNINGS+1))
+      fi
     fi
   fi
 
