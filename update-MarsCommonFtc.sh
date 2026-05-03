@@ -15,7 +15,10 @@ fi
 CURRENT_TAG="$(git describe --tags --exact-match HEAD 2>/dev/null || true)"
 
 # Collect the 10 most recent tags with their commit dates
-mapfile -t TAGS < <(git tag --sort=-creatordate | head -10)
+TAGS=()
+while IFS= read -r tag; do
+    TAGS+=("$tag")
+done < <(git tag --sort=-creatordate | head -10)
 COUNT=${#TAGS[@]}
 
 if [[ $COUNT -eq 0 ]]; then

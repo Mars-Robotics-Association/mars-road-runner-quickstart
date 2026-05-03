@@ -1,5 +1,6 @@
 include ':FtcRobotController'
 include ':TeamCode'
+include ':MeepMeepTesting'
 
 // --- MarsCommonFtc modules ---
 include ':WpiMath'
@@ -13,5 +14,3 @@ project(':ControlLab').projectDir = file('MarsCommonFtc/ControlLab')
 
 include ':RuckigNative'
 project(':RuckigNative').projectDir = file('MarsCommonFtc/RuckigNative')
-
-include ':MeepMeepTesting'

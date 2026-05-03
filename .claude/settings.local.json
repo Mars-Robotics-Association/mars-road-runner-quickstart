@@ -28,7 +28,9 @@
       "WebFetch(domain:docs.wpilib.org)",
       "Bash(head:*)",
       "WebFetch(domain:www.gobilda.com)",
-      "Bash(xargs grep:*)"
+      "Bash(xargs grep:*)",
+      "Bash(Get-ChildItem -Path . -Force)",
+      "Bash(Select-Object Name, PSIsContainer)"
     ]
   }
 }

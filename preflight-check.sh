@@ -56,7 +56,7 @@ if [[ $goto_summary -eq 0 ]]; then
     if [[ -z "$v" ]]; then
       echo "  [FAIL] Missing ${k#REQ_} from Gradle output."
       ERRORS=$((ERRORS+1))
-    elif [[ "${v,,}" == "unknown" ]]; then
+    elif [[ "$(echo "$v" | tr '[:upper:]' '[:lower:]')" == "unknown" ]]; then
       echo "  [FAIL] ${k#REQ_} returned 'unknown'."
       ERRORS=$((ERRORS+1))
     fi
@@ -184,7 +184,7 @@ if [[ $goto_summary -eq 0 ]]; then
   elif [[ -d "$SDK_DIR/ndk/$REQ_NDK_MAIN" ]]; then
     echo "      [OK]   NDK $REQ_NDK_MAIN found"
   else
-    if [[ "${REQ_NDK_MAIN,,}" == "${REQ_NDK_RUCKIG,,}" ]]; then
+    if [[ "$(echo "$REQ_NDK_MAIN" | tr '[:upper:]' '[:lower:]')" == "$(echo "$REQ_NDK_RUCKIG" | tr '[:upper:]' '[:lower:]')" ]]; then
       echo "      [WARN] NDK $REQ_NDK_MAIN not found"
       WARNINGS=$((WARNINGS+1))
     else
@@ -277,7 +277,7 @@ if [[ $goto_summary -eq 0 ]]; then
       echo "      [WARN] google-java-format.jar not found at ~/.githooks/google-java-format.jar"
       if command -v curl >/dev/null 2>&1; then
         read -r -p "             Download latest release now? [Y/N] " DL_CHOICE
-        if [[ "${DL_CHOICE^^}" == "Y" ]]; then
+        if [[ "$DL_CHOICE" == "Y" || "$DL_CHOICE" == "y" ]]; then
           mkdir -p "$HOME/.githooks"
           DL_URL=$(curl -fsSL "https://api.github.com/repos/google/google-java-format/releases/latest" \
             | grep '"browser_download_url"' | grep 'all-deps' | head -n1 \
@@ -337,10 +337,10 @@ if [[ $ERRORS -gt 0 ]]; then
 fi
 
 BUILD_CHOICE="${1:-}"
-if [[ "${BUILD_CHOICE^^}" != "Y" && "${BUILD_CHOICE^^}" != "N" ]]; then
+if [[ "$BUILD_CHOICE" != "Y" && "$BUILD_CHOICE" != "y" && "$BUILD_CHOICE" != "N" && "$BUILD_CHOICE" != "n" ]]; then
   read -r -p "All critical checks passed. Run a full Gradle build now? [Y/N] " BUILD_CHOICE
 fi
-if [[ "${BUILD_CHOICE^^}" == "Y" ]]; then
+if [[ "$BUILD_CHOICE" == "Y" || "$BUILD_CHOICE" == "y" ]]; then
   echo
   echo "Running: ./gradlew assembleDebug"
   echo "This may take several minutes on first run..."
