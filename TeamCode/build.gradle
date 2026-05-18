@@ -48,7 +48,6 @@ dependencies {
     implementation project(':FtcRobotController')
     implementation project(path: ':ControlLib', configuration: 'shadow')
     compileOnly project(':WpiMath')
-    implementation project(':RuckigNative')
     testImplementation project(path: ':ControlLib', configuration: 'shadow')
     testImplementation project(':WpiMath')
     testImplementation 'org.junit.jupiter:junit-jupiter:5.13.4'

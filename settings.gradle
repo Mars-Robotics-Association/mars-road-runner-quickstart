@@ -11,6 +11,3 @@ project(':ControlLib').projectDir = file('MarsCommonFtc/ControlLib')
 
 include ':ControlLab'
 project(':ControlLab').projectDir = file('MarsCommonFtc/ControlLab')
-
-include ':RuckigNative'
-project(':RuckigNative').projectDir = file('MarsCommonFtc/RuckigNative')

@@ -18,8 +18,6 @@ echo Reading build requirements via Gradle...
 set REQ_JAVA=
 set REQ_SDK=
 set REQ_NDK_MAIN=
-set REQ_NDK_RUCKIG=
-set REQ_CMAKE=
 set TEMP_VERSIONS=%TEMP%\preflight_%RANDOM%.txt
 
 cd /d "!SCRIPT_DIR!"
@@ -36,11 +34,6 @@ for /f "usebackq tokens=1,* delims==" %%A in ("!TEMP_VERSIONS!") do (
     if "%%A"=="PREFLIGHT_JAVA" set REQ_JAVA=%%B
     if "%%A"=="PREFLIGHT_COMPILE_SDK" set REQ_SDK=%%B
     if "%%A"=="PREFLIGHT_NDK_MAIN" set REQ_NDK_MAIN=%%B
-    if "%%A"=="PREFLIGHT_NDK_RUCKIG" set REQ_NDK_RUCKIG=%%B
-    if "%%A"=="PREFLIGHT_CMAKE_MIN" (
-        set REQ_CMAKE=%%B
-        set REQ_CMAKE=!REQ_CMAKE:+=!
-    )
 )
 del "!TEMP_VERSIONS!" 2>nul
 
@@ -56,14 +49,6 @@ if "!REQ_NDK_MAIN!"=="" (
     echo   [FAIL] Missing PREFLIGHT_NDK_MAIN from Gradle output.
     set /a ERRORS+=1
 )
-if "!REQ_NDK_RUCKIG!"=="" (
-    echo   [FAIL] Missing PREFLIGHT_NDK_RUCKIG from Gradle output.
-    set /a ERRORS+=1
-)
-if "!REQ_CMAKE!"=="" (
-    echo   [FAIL] Missing PREFLIGHT_CMAKE_MIN from Gradle output.
-    set /a ERRORS+=1
-)
 
 if /i "!REQ_JAVA!"=="unknown" (
     echo   [FAIL] PREFLIGHT_JAVA returned 'unknown'.
@@ -77,14 +62,6 @@ if /i "!REQ_NDK_MAIN!"=="unknown" (
     echo   [FAIL] PREFLIGHT_NDK_MAIN returned 'unknown'.
     set /a ERRORS+=1
 )
-if /i "!REQ_NDK_RUCKIG!"=="unknown" (
-    echo   [FAIL] PREFLIGHT_NDK_RUCKIG returned 'unknown'.
-    set /a ERRORS+=1
-)
-if /i "!REQ_CMAKE!"=="unknown" (
-    echo   [FAIL] PREFLIGHT_CMAKE_MIN returned 'unknown'.
-    set /a ERRORS+=1
-)
 
 if !ERRORS! GTR 0 (
     goto summary
@@ -92,23 +69,13 @@ if !ERRORS! GTR 0 (
 
 echo   Java      : !REQ_JAVA!
 echo   API level : android-!REQ_SDK!
-echo   NDK main  : !REQ_NDK_MAIN!
-echo   NDK C++20 : !REQ_NDK_RUCKIG!
-echo   CMake min : !REQ_CMAKE!
+echo   NDK       : !REQ_NDK_MAIN!
 echo.
 
-:: Pre-compute cmake major/minor for the version comparison in check 7
-set REQ_CMAKE_MAJOR=3
-set REQ_CMAKE_MINOR=22
-for /f "tokens=1,2 delims=." %%A in ("!REQ_CMAKE!") do (
-    set REQ_CMAKE_MAJOR=%%A
-    set REQ_CMAKE_MINOR=%%B
-)
-
 :: ============================================================
-:: CHECK 1/10: JDK version
+:: CHECK 1/8: JDK version
 :: ============================================================
-echo [1/10] JDK version...
+echo [1/8] JDK version...
 set JAVA_VER_LINE=
 set JAVA_FOUND_RAW=
 set JAVA_FOUND_NORM=
@@ -140,7 +107,7 @@ if "!JAVA_VER_LINE!"=="" (
 :: ============================================================
 :: CHECK 2/10: JDK security baseline via OpenJDK advisory
 :: ============================================================
-echo [2/10] JDK security baseline ^(OpenJDK advisory^)...
+echo [2/8] JDK security baseline ^(OpenJDK advisory^)...
 if "!JAVA_FOUND_NORM!"=="" (
     echo       [SKIP] JDK version unknown
 ) else (
@@ -245,9 +212,9 @@ if "!JAVA_FOUND_NORM!"=="" (
 )
 
 :: ============================================================
-:: CHECK 3/10: local.properties and sdk.dir
+:: CHECK 3/8: local.properties and sdk.dir
 :: ============================================================
-echo [3/10] local.properties...
+echo [3/8] local.properties...
 set SDK_DIR=
 if not exist "!SCRIPT_DIR!\local.properties" (
     echo       [FAIL] local.properties not found
@@ -269,9 +236,9 @@ if not exist "!SCRIPT_DIR!\local.properties" (
 )
 
 :: ============================================================
-:: CHECK 4/10: Android SDK directory
+:: CHECK 4/8: Android SDK directory
 :: ============================================================
-echo [4/10] Android SDK directory...
+echo [4/8] Android SDK directory...
 if "!SDK_DIR!"=="" (
     echo       [SKIP] SDK path unknown
 ) else if not exist "!SDK_DIR!" (
@@ -283,9 +250,9 @@ if "!SDK_DIR!"=="" (
 )
 
 :: ============================================================
-:: CHECK 5/10: Android SDK platform
+:: CHECK 5/8: Android SDK platform
 :: ============================================================
-echo [5/10] Android SDK platform android-!REQ_SDK!...
+echo [5/8] Android SDK platform android-!REQ_SDK!...
 if "!SDK_DIR!"=="" (
     echo       [SKIP] SDK path unknown
 ) else if exist "!SDK_DIR!\platforms\android-!REQ_SDK!" (
@@ -297,91 +264,23 @@ if "!SDK_DIR!"=="" (
 )
 
 :: ============================================================
-:: CHECK 6/10: Android NDK main build
+:: CHECK 6/8: Android NDK
 :: ============================================================
-echo [6/10] Android NDK !REQ_NDK_MAIN! ^(main build^)...
+echo [6/8] Android NDK !REQ_NDK_MAIN!...
 if "!SDK_DIR!"=="" (
     echo       [SKIP] SDK path unknown
 ) else if exist "!SDK_DIR!\ndk\!REQ_NDK_MAIN!" (
     echo       [OK]   NDK !REQ_NDK_MAIN! found
 ) else (
-    if /i "!REQ_NDK_MAIN!"=="!REQ_NDK_RUCKIG!" (
-        echo       [WARN] NDK !REQ_NDK_MAIN! not found
-        echo              SDK Manager -^> SDK Tools -^> NDK ^(Side by side^) -^> !REQ_NDK_MAIN!
-        set /a WARNINGS+=1
-    ) else (
-        echo       [INFO] NDK !REQ_NDK_MAIN! not found ^(separate NDK is configured for native modules^)
-        echo              Optional unless another module explicitly requires !REQ_NDK_MAIN!
-    )
-)
-
-:: ============================================================
-:: CHECK 7/10: Android NDK Ruckig / C++20
-:: ============================================================
-echo [7/10] Android NDK !REQ_NDK_RUCKIG! ^(RuckigNative / C++20^)...
-if "!SDK_DIR!"=="" (
-    echo       [SKIP] SDK path unknown
-) else if exist "!SDK_DIR!\ndk\!REQ_NDK_RUCKIG!" (
-    echo       [OK]   NDK !REQ_NDK_RUCKIG! found
-) else (
-    echo       [WARN] NDK !REQ_NDK_RUCKIG! not found -- RuckigNative will not compile
-    echo              SDK Manager -^> SDK Tools -^> NDK ^(Side by side^) -^> !REQ_NDK_RUCKIG!
+    echo       [WARN] NDK !REQ_NDK_MAIN! not found
+    echo              SDK Manager -^> SDK Tools -^> NDK ^(Side by side^) -^> !REQ_NDK_MAIN!
     set /a WARNINGS+=1
 )
 
 :: ============================================================
-:: CHECK 8/10: CMake
+:: CHECK 7/8: Git submodules
 :: ============================================================
-echo [8/10] CMake ^>= !REQ_CMAKE! ^(RuckigNative native build^)...
-set CMAKE_FOUND=0
-set CMAKE_VER=
-
-cmake --version >nul 2>&1
-if !errorlevel!==0 (
-    for /f "tokens=3" %%V in ('cmake --version 2^>^&1 ^| findstr /i "cmake version"') do (
-        if "!CMAKE_VER!"=="" set CMAKE_VER=%%V
-    )
-    set CMAKE_FOUND=1
-)
-
-if !CMAKE_FOUND!==0 if not "!SDK_DIR!"=="" (
-    for /d %%D in ("!SDK_DIR!\cmake\*") do (
-        if exist "%%D\bin\cmake.exe" if !CMAKE_FOUND!==0 (
-            for /f "tokens=3" %%V in ('"%%D\bin\cmake.exe" --version 2^>^&1 ^| findstr /i "cmake version"') do (
-                if "!CMAKE_VER!"=="" set CMAKE_VER=%%V
-            )
-            set CMAKE_FOUND=1
-        )
-    )
-)
-
-if !CMAKE_FOUND!==0 (
-    echo       [WARN] CMake not found on PATH or in Android SDK
-    echo              SDK Manager -> SDK Tools -> CMake
-    set /a WARNINGS+=1
-) else (
-    set FOUND_CMAKE_MAJOR=0
-    set FOUND_CMAKE_MINOR=0
-    for /f "tokens=1,2 delims=." %%A in ("!CMAKE_VER!") do (
-        set FOUND_CMAKE_MAJOR=%%A
-        set FOUND_CMAKE_MINOR=%%B
-    )
-    set CMAKE_OK=0
-    if !FOUND_CMAKE_MAJOR! GTR !REQ_CMAKE_MAJOR! set CMAKE_OK=1
-    if !FOUND_CMAKE_MAJOR! EQU !REQ_CMAKE_MAJOR! if !FOUND_CMAKE_MINOR! GEQ !REQ_CMAKE_MINOR! set CMAKE_OK=1
-    if !CMAKE_OK!==1 (
-        echo       [OK]   CMake !CMAKE_VER!
-    ) else (
-        echo       [WARN] CMake !CMAKE_VER! found but ^>= !REQ_CMAKE! required
-        echo              Update CMake via SDK Manager -^> SDK Tools -^> CMake
-        set /a WARNINGS+=1
-    )
-)
-
-:: ============================================================
-:: CHECK 9/10: Git submodules
-:: ============================================================
-echo [9/10] Git submodules...
+echo [7/8] Git submodules...
 
 git rev-parse --git-dir >nul 2>&1
 if !errorlevel! neq 0 (
@@ -452,9 +351,9 @@ if not exist "!USERPROFILE!\.githooks\google-java-format.jar" (
 )
 
 :: ============================================================
-:: CHECK 10/10: Gradle offline mode
+:: CHECK 8/8: Gradle offline mode
 :: ============================================================
-echo [10/10] Gradle offline mode...
+echo [8/8] Gradle offline mode...
 set OFFLINE_FOUND=0
 
 if exist "!SCRIPT_DIR!\gradle.properties" (

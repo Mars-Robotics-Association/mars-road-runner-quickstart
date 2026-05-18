@@ -7,17 +7,11 @@ gradle.projectsEvaluated {
     root.task('printBuildVersions') {
         doLast {
             def tc = root.findProject(':TeamCode')
-            def rn = root.findProject(':RuckigNative')
 
             if (tc) {
                 println "PREFLIGHT_JAVA=${tc.android.compileOptions?.sourceCompatibility ?: 'unknown'}"
                 println "PREFLIGHT_COMPILE_SDK=${tc.android.compileSdk}"
                 println "PREFLIGHT_NDK_MAIN=${tc.android.ndkVersion ?: 'unknown'}"
-            }
-
-            if (rn) {
-                println "PREFLIGHT_NDK_RUCKIG=${rn.android.ndkVersion ?: 'unknown'}"
-                println "PREFLIGHT_CMAKE_MIN=${rn.android.externalNativeBuild?.cmake?.version ?: 'unknown'}"
             }
         }
     }

@@ -24,8 +24,6 @@ echo "Reading build requirements via Gradle..."
 REQ_JAVA=""
 REQ_SDK=""
 REQ_NDK_MAIN=""
-REQ_NDK_RUCKIG=""
-REQ_CMAKE=""
 TEMP_VERSIONS="${TMPDIR:-/tmp}/preflight_$RANDOM.txt"
 
 cd "$SCRIPT_DIR" || exit 1
@@ -45,13 +43,11 @@ if [[ $goto_summary -eq 0 ]]; then
       PREFLIGHT_JAVA) REQ_JAVA="$val" ;;
       PREFLIGHT_COMPILE_SDK) REQ_SDK="$val" ;;
       PREFLIGHT_NDK_MAIN) REQ_NDK_MAIN="$val" ;;
-      PREFLIGHT_NDK_RUCKIG) REQ_NDK_RUCKIG="$val" ;;
-      PREFLIGHT_CMAKE_MIN) REQ_CMAKE="${val/+}" ;;
     esac
   done < "$TEMP_VERSIONS"
   rm -f "$TEMP_VERSIONS"
 
-  for k in REQ_JAVA REQ_SDK REQ_NDK_MAIN REQ_NDK_RUCKIG REQ_CMAKE; do
+  for k in REQ_JAVA REQ_SDK REQ_NDK_MAIN; do
     v="${!k}"
     if [[ -z "$v" ]]; then
       echo "  [FAIL] Missing ${k#REQ_} from Gradle output."
@@ -68,17 +64,12 @@ if [[ $ERRORS -gt 0 ]]; then
 else
   echo "  Java      : $REQ_JAVA"
   echo "  API level : android-$REQ_SDK"
-  echo "  NDK main  : $REQ_NDK_MAIN"
-  echo "  NDK C++20 : $REQ_NDK_RUCKIG"
-  echo "  CMake min : $REQ_CMAKE"
+  echo "  NDK       : $REQ_NDK_MAIN"
   echo
-  REQ_CMAKE_MAJOR="${REQ_CMAKE%%.*}"
-  REQ_CMAKE_MINOR_TMP="${REQ_CMAKE#*.}"
-  REQ_CMAKE_MINOR="${REQ_CMAKE_MINOR_TMP%%.*}"
 fi
 
 if [[ $goto_summary -eq 0 ]]; then
-  echo "[1/10] JDK version..."
+  echo "[1/8] JDK version..."
   JAVA_VER_LINE="$(java -version 2>&1 | head -n1)"
   JAVA_FOUND_RAW=""
   JAVA_FOUND_NORM=""
@@ -98,7 +89,7 @@ if [[ $goto_summary -eq 0 ]]; then
     fi
   fi
 
-  echo "[2/10] JDK security baseline (OpenJDK advisory)..."
+  echo "[2/8] JDK security baseline (OpenJDK advisory)..."
   if [[ -z "$JAVA_FOUND_NORM" ]]; then
     echo "      [SKIP] JDK version unknown"
   elif ! command -v curl >/dev/null 2>&1; then
@@ -139,7 +130,7 @@ if [[ $goto_summary -eq 0 ]]; then
     fi
   fi
 
-  echo "[3/10] local.properties..."
+  echo "[3/8] local.properties..."
   SDK_DIR=""
   if [[ ! -f "$SCRIPT_DIR/local.properties" ]]; then
     echo "      [FAIL] local.properties not found"
@@ -157,7 +148,7 @@ if [[ $goto_summary -eq 0 ]]; then
     fi
   fi
 
-  echo "[4/10] Android SDK directory..."
+  echo "[4/8] Android SDK directory..."
   if [[ -z "$SDK_DIR" ]]; then
     echo "      [SKIP] SDK path unknown"
   elif [[ ! -d "$SDK_DIR" ]]; then
@@ -168,7 +159,7 @@ if [[ $goto_summary -eq 0 ]]; then
     echo "      [OK]   $SDK_DIR"
   fi
 
-  echo "[5/10] Android SDK platform android-$REQ_SDK..."
+  echo "[5/8] Android SDK platform android-$REQ_SDK..."
   if [[ -z "$SDK_DIR" ]]; then
     echo "      [SKIP] SDK path unknown"
   elif [[ -d "$SDK_DIR/platforms/android-$REQ_SDK" ]]; then
@@ -178,64 +169,17 @@ if [[ $goto_summary -eq 0 ]]; then
     ERRORS=$((ERRORS+1))
   fi
 
-  echo "[6/10] Android NDK $REQ_NDK_MAIN (main build)..."
+  echo "[6/8] Android NDK $REQ_NDK_MAIN..."
   if [[ -z "$SDK_DIR" ]]; then
     echo "      [SKIP] SDK path unknown"
   elif [[ -d "$SDK_DIR/ndk/$REQ_NDK_MAIN" ]]; then
     echo "      [OK]   NDK $REQ_NDK_MAIN found"
   else
-    if [[ "$(echo "$REQ_NDK_MAIN" | tr '[:upper:]' '[:lower:]')" == "$(echo "$REQ_NDK_RUCKIG" | tr '[:upper:]' '[:lower:]')" ]]; then
-      echo "      [WARN] NDK $REQ_NDK_MAIN not found"
-      WARNINGS=$((WARNINGS+1))
-    else
-      echo "      [INFO] NDK $REQ_NDK_MAIN not found (separate NDK is configured for native modules)"
-      echo "             Optional unless another module explicitly requires $REQ_NDK_MAIN"
-    fi
-  fi
-
-  echo "[7/10] Android NDK $REQ_NDK_RUCKIG (RuckigNative / C++20)..."
-  if [[ -z "$SDK_DIR" ]]; then
-    echo "      [SKIP] SDK path unknown"
-  elif [[ -d "$SDK_DIR/ndk/$REQ_NDK_RUCKIG" ]]; then
-    echo "      [OK]   NDK $REQ_NDK_RUCKIG found"
-  else
-    echo "      [WARN] NDK $REQ_NDK_RUCKIG not found -- RuckigNative will not compile"
+    echo "      [WARN] NDK $REQ_NDK_MAIN not found"
     WARNINGS=$((WARNINGS+1))
   fi
 
-  echo "[8/10] CMake >= $REQ_CMAKE (RuckigNative native build)..."
-  CMAKE_FOUND=0
-  CMAKE_VER=""
-  if command -v cmake >/dev/null 2>&1; then
-    CMAKE_VER="$(cmake --version 2>/dev/null | head -n1 | awk '{print $3}')"
-    CMAKE_FOUND=1
-  fi
-  if [[ $CMAKE_FOUND -eq 0 && -n "$SDK_DIR" && -d "$SDK_DIR/cmake" ]]; then
-    while IFS= read -r -d '' c; do
-      CMAKE_VER="$($c --version 2>/dev/null | head -n1 | awk '{print $3}')"
-      CMAKE_FOUND=1
-      break
-    done < <(find "$SDK_DIR/cmake" -type f -path '*/bin/cmake' -print0 2>/dev/null)
-  fi
-  if [[ $CMAKE_FOUND -eq 0 ]]; then
-    echo "      [WARN] CMake not found on PATH or in Android SDK"
-    WARNINGS=$((WARNINGS+1))
-  else
-    FOUND_CMAKE_MAJOR="${CMAKE_VER%%.*}"
-    FOUND_CMAKE_MINOR_TMP="${CMAKE_VER#*.}"
-    FOUND_CMAKE_MINOR="${FOUND_CMAKE_MINOR_TMP%%.*}"
-    CMAKE_OK=0
-    if (( FOUND_CMAKE_MAJOR > REQ_CMAKE_MAJOR )); then CMAKE_OK=1; fi
-    if (( FOUND_CMAKE_MAJOR == REQ_CMAKE_MAJOR )) && (( FOUND_CMAKE_MINOR >= REQ_CMAKE_MINOR )); then CMAKE_OK=1; fi
-    if [[ $CMAKE_OK -eq 1 ]]; then
-      echo "      [OK]   CMake $CMAKE_VER"
-    else
-      echo "      [WARN] CMake $CMAKE_VER found but >= $REQ_CMAKE required"
-      WARNINGS=$((WARNINGS+1))
-    fi
-  fi
-
-  echo "[9/10] Git submodules..."
+  echo "[7/8] Git submodules..."
   if ! git rev-parse --git-dir >/dev/null 2>&1; then
     echo "      [FAIL] Not in a git repository or git not found"
     ERRORS=$((ERRORS+1))
@@ -300,7 +244,7 @@ if [[ $goto_summary -eq 0 ]]; then
     fi
   fi
 
-  echo "[10/10] Gradle offline mode..."
+  echo "[8/8] Gradle offline mode..."
   OFFLINE_FOUND=0
   check_offline_file() {
     local f="$1"
