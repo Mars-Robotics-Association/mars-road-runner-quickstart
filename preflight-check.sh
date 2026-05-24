@@ -16,79 +16,141 @@ normalize_jdk_version() {
   echo "$raw" | sed -E 's/^([0-9]+)\.([0-9]+)\.([0-9]+).*$/\1.\2.\3/'
 }
 
+# Returns the JDK home path configured as Android Studio's Gradle JDK, or exits non-zero.
+resolve_as_jdk_home() {
+  local idea_gradle="$SCRIPT_DIR/.idea/gradle.xml"
+  [[ -f "$idea_gradle" ]] || return 1
+
+  local gradle_jvm
+  gradle_jvm="$(grep -o 'gradleJvm" value="[^"]*"' "$idea_gradle" \
+    | sed 's/.*value="\([^"]*\)".*/\1/' | head -1)"
+  [[ -z "$gradle_jvm" ]] && return 1
+
+  if [[ "$gradle_jvm" == "#JAVA_HOME" ]]; then
+    [[ -n "${JAVA_HOME:-}" && -x "$JAVA_HOME/bin/java" ]] && echo "$JAVA_HOME" && return 0
+    return 1
+  fi
+
+  # Android Studio "Gradle local JDK" -- the path lives in .gradle/config.properties.
+  if [[ "$gradle_jvm" == "#GRADLE_LOCAL_JAVA_HOME" ]]; then
+    local cfg="$SCRIPT_DIR/.gradle/config.properties"
+    [[ -f "$cfg" ]] || return 1
+    local jh
+    jh="$(grep -E '^java\.home=' "$cfg" | head -1)"
+    jh="${jh#java.home=}"
+    # Unescape Java .properties (\: -> :) then normalize all backslashes to / for bash.
+    jh="${jh//\\:/:}"
+    jh="${jh//\\//}"
+    [[ -n "$jh" && -x "$jh/bin/java" ]] && echo "$jh" && return 0
+    return 1
+  fi
+
+  # Absolute path (Windows C:\... or Unix /)
+  if [[ "$gradle_jvm" =~ ^[A-Za-z]:\\ || "$gradle_jvm" == /* ]]; then
+    echo "$gradle_jvm" && return 0
+  fi
+
+  # Named JDK -- search jdk.table.xml files, newest AS version first
+  local appdata="${APPDATA:-}"
+  [[ -z "$appdata" ]] && return 1
+  if command -v cygpath >/dev/null 2>&1; then
+    appdata="$(cygpath -u "$appdata")"
+  fi
+
+  local jdk_table result
+  for jdk_table in $(ls -r "$appdata"/Google/AndroidStudio*/options/jdk.table.xml 2>/dev/null); do
+    [[ -f "$jdk_table" ]] || continue
+    result="$(awk -v target="$gradle_jvm" '
+      /<jdk / { in_jdk=1; name=""; path="" }
+      in_jdk {
+        line = $0
+        if (line ~ /name value=/) {
+          sub(/.*name value="/, "", line); sub(/".*/, "", line); name = line
+        }
+        if (line ~ /homePath value=/) {
+          sub(/.*homePath value="/, "", line); sub(/".*/, "", line); path = line
+        }
+        if (line ~ /<\/jdk>/) {
+          if (name == target && path != "") print path
+          in_jdk = 0
+        }
+      }
+    ' "$jdk_table")"
+    if [[ -n "$result" ]]; then
+      result="${result/\$USER_HOME\$/$HOME}"
+      echo "$result"
+      return 0
+    fi
+  done
+  return 1
+}
+
 printf '=============================================\n'
 printf ' FTC TeamCode Pre-Flight Check\n'
 printf '=============================================\n\n'
 
-echo "Reading build requirements via Gradle..."
+# Find the JDK that Gradle/Android Studio actually builds with (fall back to PATH),
+# then run the build probe WITH that JDK. The probe both reads the project's version
+# requirements and proves the JDK can configure the build (Gradle + AGP) -- the real
+# "is my JDK healthy" question, independent of the source language level.
 REQ_JAVA=""
 REQ_SDK=""
-REQ_NDK_MAIN=""
-TEMP_VERSIONS="${TMPDIR:-/tmp}/preflight_$RANDOM.txt"
+goto_summary=0
 
 cd "$SCRIPT_DIR" || exit 1
-if ! ./gradlew -q --warning-mode=none --init-script "$SCRIPT_DIR/preflight-versions.gradle" printBuildVersions > "$TEMP_VERSIONS" 2>/dev/null; then
-  rm -f "$TEMP_VERSIONS"
-  echo "  [FAIL] Gradle query failed. Could not read build requirements."
+
+AS_JDK_HOME="$(resolve_as_jdk_home 2>/dev/null || true)"
+if [[ -n "$AS_JDK_HOME" ]]; then
+  JAVA_BIN="$AS_JDK_HOME/bin/java"
+  GRADLE_JVM_LABEL="$(grep -o 'gradleJvm" value="[^"]*"' "$SCRIPT_DIR/.idea/gradle.xml" \
+    | sed 's/.*value="\([^"]*\)".*/\1/' | head -1)"
+  JDK_SOURCE="Android Studio ($GRADLE_JVM_LABEL)"
+  PROBE_JAVA_HOME="$AS_JDK_HOME"
+else
+  JAVA_BIN="java"
+  JDK_SOURCE="system PATH / JAVA_HOME"
+  PROBE_JAVA_HOME="${JAVA_HOME:-}"
+fi
+
+JAVA_VER_LINE="$("$JAVA_BIN" -version 2>&1 | head -n1)"
+JAVA_FOUND_RAW="$(echo "$JAVA_VER_LINE" | sed -E 's/.*"([^"]+)".*/\1/')"
+JAVA_FOUND_NORM="$(normalize_jdk_version "$JAVA_FOUND_RAW")"
+JDK_MAJOR="$(echo "$JAVA_FOUND_RAW" | cut -d. -f1)"
+
+echo "[1/8] Build configuration with Gradle JDK..."
+if [[ -n "$PROBE_JAVA_HOME" ]]; then
+  PROBE_OUT="$(JAVA_HOME="$PROBE_JAVA_HOME" ./gradlew -q --warning-mode=none --init-script "$SCRIPT_DIR/preflight-versions.gradle" printBuildVersions 2>&1)"
+  PROBE_RC=$?
+else
+  PROBE_OUT="$(./gradlew -q --warning-mode=none --init-script "$SCRIPT_DIR/preflight-versions.gradle" printBuildVersions 2>&1)"
+  PROBE_RC=$?
+fi
+if [[ $PROBE_RC -ne 0 ]]; then
+  echo "      [FAIL] Gradle could not configure the build with this JDK  [$JDK_SOURCE]"
+  [[ -n "$JAVA_VER_LINE" ]] && echo "             JDK: $JAVA_VER_LINE"
+  echo "             ---- gradle output (tail) ----"
+  echo "$PROBE_OUT" | tail -n 12 | sed 's/^/             /'
   ERRORS=$((ERRORS+1))
   goto_summary=1
 else
-  goto_summary=0
-fi
-
-if [[ $goto_summary -eq 0 ]]; then
   while IFS='=' read -r key val; do
     val="${val%$'\r'}"
     case "$key" in
       PREFLIGHT_JAVA) REQ_JAVA="$val" ;;
       PREFLIGHT_COMPILE_SDK) REQ_SDK="$val" ;;
-      PREFLIGHT_NDK_MAIN) REQ_NDK_MAIN="$val" ;;
     esac
-  done < "$TEMP_VERSIONS"
-  rm -f "$TEMP_VERSIONS"
-
-  for k in REQ_JAVA REQ_SDK REQ_NDK_MAIN; do
-    v="${!k}"
-    if [[ -z "$v" ]]; then
-      echo "  [FAIL] Missing ${k#REQ_} from Gradle output."
-      ERRORS=$((ERRORS+1))
-    elif [[ "$(echo "$v" | tr '[:upper:]' '[:lower:]')" == "unknown" ]]; then
-      echo "  [FAIL] ${k#REQ_} returned 'unknown'."
-      ERRORS=$((ERRORS+1))
-    fi
-  done
-fi
-
-if [[ $ERRORS -gt 0 ]]; then
-  goto_summary=1
-else
-  echo "  Java      : $REQ_JAVA"
-  echo "  API level : android-$REQ_SDK"
-  echo "  NDK       : $REQ_NDK_MAIN"
-  echo
+  done <<< "$PROBE_OUT"
+  if [[ -z "$REQ_SDK" || "$(echo "$REQ_SDK" | tr '[:upper:]' '[:lower:]')" == "unknown" ]]; then
+    echo "      [FAIL] Build configured, but compileSdk could not be read from Gradle"
+    ERRORS=$((ERRORS+1))
+    goto_summary=1
+  else
+    echo "      [OK]   ${JAVA_VER_LINE:-JDK present} configures the build  [$JDK_SOURCE]"
+    echo "             Source level: Java ${REQ_JAVA:-unknown}    API level: android-$REQ_SDK"
+  fi
 fi
 
 if [[ $goto_summary -eq 0 ]]; then
-  echo "[1/8] JDK version..."
-  JAVA_VER_LINE="$(java -version 2>&1 | head -n1)"
-  JAVA_FOUND_RAW=""
-  JAVA_FOUND_NORM=""
-  if [[ -z "$JAVA_VER_LINE" ]]; then
-    echo "      [FAIL] java not found on PATH"
-    echo "             Install JDK $REQ_JAVA and add it to PATH (or set JAVA_HOME)"
-    ERRORS=$((ERRORS+1))
-  else
-    JAVA_MAJOR="$(echo "$JAVA_VER_LINE" | sed -E 's/.*\"([0-9]+).*/\1/')"
-    JAVA_FOUND_RAW="$(echo "$JAVA_VER_LINE" | sed -E 's/.*\"([^\"]+)\".*/\1/')"
-    JAVA_FOUND_NORM="$(normalize_jdk_version "$JAVA_FOUND_RAW")"
-    if [[ "$JAVA_MAJOR" == "$REQ_JAVA" ]]; then
-      echo "      [OK]   $JAVA_VER_LINE"
-    else
-      echo "      [FAIL] JDK $REQ_JAVA required. Found: $JAVA_VER_LINE"
-      ERRORS=$((ERRORS+1))
-    fi
-  fi
-
   echo "[2/8] JDK security baseline (OpenJDK advisory)..."
   if [[ -z "$JAVA_FOUND_NORM" ]]; then
     echo "      [SKIP] JDK version unknown"
@@ -111,17 +173,18 @@ if [[ $goto_summary -eq 0 ]]; then
         LATEST_PATH="${LATEST_PATH%\"}"
         LATEST_URL="https://openjdk.org/groups/vulnerability/advisories/${LATEST_PATH}"
         LATEST_HTML="$(curl -fsSL "$LATEST_URL" 2>/dev/null || true)"
-        REQUIRED_FOR_MAJOR="$(echo "$LATEST_HTML" | grep -Eo "${REQ_JAVA}([.][0-9]+[.][0-9]+|u[0-9]+)" | head -n1 || true)"
+        REQUIRED_FOR_MAJOR="$(echo "$LATEST_HTML" | grep -Eo "${JDK_MAJOR}([.][0-9]+[.][0-9]+|u[0-9]+)" | head -n1 || true)"
         if [[ -z "$REQUIRED_FOR_MAJOR" ]]; then
-          echo "      [WARN] Could not find JDK $REQ_JAVA baseline in latest advisory"
+          echo "      [WARN] Could not find JDK $JDK_MAJOR baseline in latest advisory"
           WARNINGS=$((WARNINGS+1))
         else
           REQUIRED_NORM="$(normalize_jdk_version "$REQUIRED_FOR_MAJOR")"
+          # FAIL when the installed JDK sorts lowest (older) than the baseline.
           LOWEST="$(printf "%s\n%s\n" "$REQUIRED_NORM" "$JAVA_FOUND_NORM" | sort -V | head -n1)"
-          if [[ "$LOWEST" == "$REQUIRED_NORM" && "$JAVA_FOUND_NORM" != "$REQUIRED_NORM" ]]; then
-            echo "      [FAIL] Installed JDK $JAVA_FOUND_RAW is older than security baseline $REQUIRED_FOR_MAJOR"
+          if [[ "$LOWEST" == "$JAVA_FOUND_NORM" && "$JAVA_FOUND_NORM" != "$REQUIRED_NORM" ]]; then
+            echo "      [WARN] Installed JDK $JAVA_FOUND_RAW is older than security baseline $REQUIRED_FOR_MAJOR"
             echo "             Advisory: $LATEST_URL"
-            ERRORS=$((ERRORS+1))
+            WARNINGS=$((WARNINGS+1))
           else
             echo "      [OK]   JDK $JAVA_FOUND_RAW meets or exceeds baseline $REQUIRED_FOR_MAJOR"
           fi
@@ -169,17 +232,7 @@ if [[ $goto_summary -eq 0 ]]; then
     ERRORS=$((ERRORS+1))
   fi
 
-  echo "[6/8] Android NDK $REQ_NDK_MAIN..."
-  if [[ -z "$SDK_DIR" ]]; then
-    echo "      [SKIP] SDK path unknown"
-  elif [[ -d "$SDK_DIR/ndk/$REQ_NDK_MAIN" ]]; then
-    echo "      [OK]   NDK $REQ_NDK_MAIN found"
-  else
-    echo "      [WARN] NDK $REQ_NDK_MAIN not found"
-    WARNINGS=$((WARNINGS+1))
-  fi
-
-  echo "[7/8] Git submodules..."
+  echo "[6/8] Git submodules..."
   if ! git rev-parse --git-dir >/dev/null 2>&1; then
     echo "      [FAIL] Not in a git repository or git not found"
     ERRORS=$((ERRORS+1))
@@ -197,7 +250,16 @@ if [[ $goto_summary -eq 0 ]]; then
             ERRORS=$((ERRORS+1))
             ;;
         +)
-          echo "      [WARN] $path -- at a different commit than expected"
+          CLEAN_HASH="${hash:1}"
+          PARENT_HASH="$(git ls-files -s "$path" | awk '{print $2}')"
+          if [[ -n "$PARENT_HASH" ]] && git -C "$path" merge-base --is-ancestor "$PARENT_HASH" "$CLEAN_HASH" 2>/dev/null; then
+            echo "      [WARN] $path -- submodule has new commits not yet staged in the parent repo"
+            echo "             Stage and commit: git add $path && git commit"
+            echo "             Or discard:       git submodule update --recursive"
+          else
+            echo "      [WARN] $path -- submodule is out of sync; at a different commit than the parent repo expects"
+            echo "             Run: git submodule update --recursive"
+          fi
           WARNINGS=$((WARNINGS+1))
           ;;
         U)
@@ -215,6 +277,19 @@ if [[ $goto_summary -eq 0 ]]; then
       echo "             Or run: ./update-MarsCommonFtc.sh"
       WARNINGS=$((WARNINGS+1))
     fi
+    # Detect staged-but-uncommitted submodule pointer changes in the parent repo.
+    # git submodule status reports clean when index == submodule HEAD, so this case
+    # is invisible to the loop above even though the parent still needs a commit.
+    while IFS= read -r sub_path; do
+      [[ -z "$sub_path" ]] && continue
+      if ! git diff --cached --quiet -- "$sub_path" 2>/dev/null; then
+        echo "      [WARN] $sub_path -- parent repo has a staged submodule pointer update that has not been committed"
+        echo "             Commit now to record the submodule update: git commit"
+        WARNINGS=$((WARNINGS+1))
+      fi
+    done < <(git config --file .gitmodules --get-regexp 'submodule\..*\.path' 2>/dev/null | awk '{print $2}')
+
+  echo "[7/8] Git hooks / Java formatter..."
     git config core.hooksPath .githooks
     git update-index --chmod=+x .githooks/pre-commit 2>/dev/null || true
     if [[ ! -f "$HOME/.githooks/google-java-format.jar" ]]; then
@@ -229,7 +304,7 @@ if [[ $goto_summary -eq 0 ]]; then
           if [[ -n "$DL_URL" ]] && curl -fsSL -o "$HOME/.githooks/google-java-format.jar" "$DL_URL"; then
             echo "      [OK]   Downloaded $(basename "$DL_URL")"
           else
-            echo "      [WARN] Download failed — install manually from https://github.com/google/google-java-format/releases/latest"
+            echo "      [WARN] Download failed -- install manually from https://github.com/google/google-java-format/releases/latest"
             WARNINGS=$((WARNINGS+1))
           fi
         else
@@ -299,3 +374,6 @@ if [[ "$BUILD_CHOICE" == "Y" || "$BUILD_CHOICE" == "y" ]]; then
 fi
 
 exit 0
+
+
+

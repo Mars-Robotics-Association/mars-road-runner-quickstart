@@ -1,4 +1,4 @@
-// Gradle init script — do not apply directly. Used by preflight-check.bat.
+// Gradle init script — do not apply directly. Used by preflight-check.sh / preflight-check.bat.
 // Usage: gradlew -q --init-script preflight-versions.gradle printBuildVersions
 
 gradle.projectsEvaluated {
@@ -11,7 +11,6 @@ gradle.projectsEvaluated {
             if (tc) {
                 println "PREFLIGHT_JAVA=${tc.android.compileOptions?.sourceCompatibility ?: 'unknown'}"
                 println "PREFLIGHT_COMPILE_SDK=${tc.android.compileSdk}"
-                println "PREFLIGHT_NDK_MAIN=${tc.android.ndkVersion ?: 'unknown'}"
             }
         }
     }

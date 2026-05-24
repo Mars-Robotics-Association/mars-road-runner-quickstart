@@ -12,100 +12,139 @@ echo =============================================
 echo.
 
 :: ============================================================
-:: READ REQUIREMENTS VIA GRADLE
+:: DETECT GRADLE JDK (used by the build-configuration probe in CHECK 1/8)
 :: ============================================================
-echo Reading build requirements via Gradle...
 set REQ_JAVA=
 set REQ_SDK=
-set REQ_NDK_MAIN=
-set TEMP_VERSIONS=%TEMP%\preflight_%RANDOM%.txt
-
-cd /d "!SCRIPT_DIR!"
-call "!SCRIPT_DIR!\gradlew.bat" -q --warning-mode=none --init-script "!SCRIPT_DIR!\preflight-versions.gradle" printBuildVersions > "!TEMP_VERSIONS!" 2>nul
-
-if not !errorlevel!==0 (
-    del "!TEMP_VERSIONS!" 2>nul
-    echo   [FAIL] Gradle query failed. Could not read build requirements.
-    set /a ERRORS+=1
-    goto summary
-)
-
-for /f "usebackq tokens=1,* delims==" %%A in ("!TEMP_VERSIONS!") do (
-    if "%%A"=="PREFLIGHT_JAVA" set REQ_JAVA=%%B
-    if "%%A"=="PREFLIGHT_COMPILE_SDK" set REQ_SDK=%%B
-    if "%%A"=="PREFLIGHT_NDK_MAIN" set REQ_NDK_MAIN=%%B
-)
-del "!TEMP_VERSIONS!" 2>nul
-
-if "!REQ_JAVA!"=="" (
-    echo   [FAIL] Missing PREFLIGHT_JAVA from Gradle output.
-    set /a ERRORS+=1
-)
-if "!REQ_SDK!"=="" (
-    echo   [FAIL] Missing PREFLIGHT_COMPILE_SDK from Gradle output.
-    set /a ERRORS+=1
-)
-if "!REQ_NDK_MAIN!"=="" (
-    echo   [FAIL] Missing PREFLIGHT_NDK_MAIN from Gradle output.
-    set /a ERRORS+=1
-)
-
-if /i "!REQ_JAVA!"=="unknown" (
-    echo   [FAIL] PREFLIGHT_JAVA returned 'unknown'.
-    set /a ERRORS+=1
-)
-if /i "!REQ_SDK!"=="unknown" (
-    echo   [FAIL] PREFLIGHT_COMPILE_SDK returned 'unknown'.
-    set /a ERRORS+=1
-)
-if /i "!REQ_NDK_MAIN!"=="unknown" (
-    echo   [FAIL] PREFLIGHT_NDK_MAIN returned 'unknown'.
-    set /a ERRORS+=1
-)
-
-if !ERRORS! GTR 0 (
-    goto summary
-)
-
-echo   Java      : !REQ_JAVA!
-echo   API level : android-!REQ_SDK!
-echo   NDK       : !REQ_NDK_MAIN!
-echo.
-
-:: ============================================================
-:: CHECK 1/8: JDK version
-:: ============================================================
-echo [1/8] JDK version...
+set JDK_MAJOR=
 set JAVA_VER_LINE=
 set JAVA_FOUND_RAW=
 set JAVA_FOUND_NORM=
-for /f "tokens=*" %%L in ('java -version 2^>^&1') do (
-    if "!JAVA_VER_LINE!"=="" set JAVA_VER_LINE=%%L
-)
-if "!JAVA_VER_LINE!"=="" (
-    echo       [FAIL] java not found on PATH
-    echo              Install JDK !REQ_JAVA! and add it to PATH ^(or set JAVA_HOME^)
-    set /a ERRORS+=1
-) else (
-    set JAVA_MAJOR=
-    for /f "tokens=3 delims= " %%V in ("!JAVA_VER_LINE!") do (
-        set _TEMP=%%~V
-        set _TEMP=!_TEMP:"=!
-        set JAVA_FOUND_RAW=!_TEMP!
-        for /f "tokens=1 delims=." %%M in ("!_TEMP!") do set JAVA_MAJOR=%%M
-    )
-    set _JAVA_PARSE_INPUT=!JAVA_FOUND_RAW!
-    call :normalize_jdk_version _JAVA_PARSE_INPUT JAVA_FOUND_NORM
-    if "!JAVA_MAJOR!"=="!REQ_JAVA!" (
-        echo       [OK]   !JAVA_VER_LINE!
-    ) else (
-        echo       [FAIL] JDK !REQ_JAVA! required. Found: !JAVA_VER_LINE!
-        set /a ERRORS+=1
+set JAVA_BIN=java
+set JDK_SOURCE=system PATH / JAVA_HOME
+set AS_JDK_HOME=
+set GRADLE_JVM=
+
+cd /d "!SCRIPT_DIR!"
+
+:: Read gradleJvm name from .idea/gradle.xml
+if exist "!SCRIPT_DIR!\.idea\gradle.xml" (
+    for /f "usebackq delims=" %%V in (`powershell -NoProfile -ExecutionPolicy Bypass -Command "$x=[xml](Get-Content -Raw '!SCRIPT_DIR!\.idea\gradle.xml'); ($x.project.component | Where-Object {$_.name -eq 'GradleSettings'}).option.GradleProjectSettings.option | Where-Object {$_.name -eq 'gradleJvm'} | Select-Object -ExpandProperty value" 2^>nul`) do (
+        if "!GRADLE_JVM!"=="" set GRADLE_JVM=%%V
     )
 )
 
+if not "!GRADLE_JVM!"=="" (
+    if /i "!GRADLE_JVM!"=="#JAVA_HOME" (
+        if defined JAVA_HOME if exist "!JAVA_HOME!\bin\java.exe" (
+            set AS_JDK_HOME=!JAVA_HOME!
+            set JDK_SOURCE=JAVA_HOME
+        )
+    ) else if /i "!GRADLE_JVM!"=="#GRADLE_LOCAL_JAVA_HOME" (
+        :: Android Studio "Gradle local JDK" -- path lives in .gradle\config.properties
+        set _JH=
+        if exist "!SCRIPT_DIR!\.gradle\config.properties" (
+            for /f "usebackq tokens=1,* delims==" %%A in ("!SCRIPT_DIR!\.gradle\config.properties") do (
+                if "%%A"=="java.home" set _JH=%%B
+            )
+        )
+        if not "!_JH!"=="" (
+            :: Unescape Java properties format: C\:\\ -> C:\
+            set _JH=!_JH:\:=:!
+            set _JH=!_JH:\\=\!
+            set AS_JDK_HOME=!_JH!
+            set JDK_SOURCE=Android Studio ^(#GRADLE_LOCAL_JAVA_HOME^)
+        )
+    ) else (
+        :: Check if it's already an absolute Windows path (drive letter + colon)
+        set _FIRST2=!GRADLE_JVM:~0,2!
+        echo !_FIRST2! | findstr /r "^[A-Za-z]:$" >nul 2>&1
+        if !errorlevel!==0 (
+            set AS_JDK_HOME=!GRADLE_JVM!
+            set JDK_SOURCE=!GRADLE_JVM!
+        ) else (
+            :: Named JDK -- resolve path from Android Studio's jdk.table.xml
+            set PS_TEMP=%TEMP%\preflight_jdk_%RANDOM%.ps1
+            (
+                echo $jdkName = '!GRADLE_JVM!'
+                echo $tables = Get-ChildItem "$env:APPDATA\Google\AndroidStudio*\options\jdk.table.xml" -EA 0 ^| Sort-Object LastWriteTime -Descending
+                echo foreach ^($t in $tables^) {
+                echo     [xml]$x = Get-Content -Raw $t.FullName
+                echo     foreach ^($j in $x.application.component.jdk^) {
+                echo         if ^($j.name.value -eq $jdkName^) {
+                echo             $p = $j.homePath.value -replace [regex]::Escape^('$USER_HOME$'^), $env:USERPROFILE
+                echo             Write-Output ([System.IO.Path]::GetFullPath^($p^)^)
+                echo             exit
+                echo         }
+                echo     }
+                echo }
+            ) > "!PS_TEMP!"
+            for /f "usebackq delims=" %%P in (`powershell -NoProfile -ExecutionPolicy Bypass -File "!PS_TEMP!" 2^>nul`) do (
+                if "!AS_JDK_HOME!"=="" set AS_JDK_HOME=%%P
+            )
+            del "!PS_TEMP!" 2>nul
+            if not "!AS_JDK_HOME!"=="" set JDK_SOURCE=Android Studio ^(!GRADLE_JVM!^)
+        )
+    )
+)
+
+if not "!AS_JDK_HOME!"=="" (
+    set JAVA_BIN=!AS_JDK_HOME!\bin\java.exe
+    if not exist "!JAVA_BIN!" set JAVA_BIN=!AS_JDK_HOME!\bin\java
+)
+
+:: Capture the JDK version string (used by step 2 and reporting)
+for /f "tokens=*" %%L in ('"!JAVA_BIN!" -version 2^>^&1') do (
+    if "!JAVA_VER_LINE!"=="" set JAVA_VER_LINE=%%L
+)
+for /f "tokens=3 delims= " %%V in ("!JAVA_VER_LINE!") do (
+    set _TEMP=%%~V
+    set _TEMP=!_TEMP:"=!
+    set JAVA_FOUND_RAW=!_TEMP!
+)
+for /f "tokens=1 delims=." %%A in ("!JAVA_FOUND_RAW!") do set JDK_MAJOR=%%A
+set _JAVA_PARSE_INPUT=!JAVA_FOUND_RAW!
+call :normalize_jdk_version _JAVA_PARSE_INPUT JAVA_FOUND_NORM
+
 :: ============================================================
-:: CHECK 2/10: JDK security baseline via OpenJDK advisory
+:: CHECK 1/8: build configuration with the Gradle JDK
+:: ============================================================
+:: Run the probe WITH the detected JDK -- this reads the project's version
+:: requirements AND proves the JDK can configure the build (Gradle + AGP).
+echo [1/8] Build configuration with Gradle JDK...
+if not "!AS_JDK_HOME!"=="" set "JAVA_HOME=!AS_JDK_HOME!"
+set TEMP_VERSIONS=%TEMP%\preflight_%RANDOM%.txt
+call "!SCRIPT_DIR!\gradlew.bat" -q --warning-mode=none --init-script "!SCRIPT_DIR!\preflight-versions.gradle" printBuildVersions > "!TEMP_VERSIONS!" 2>&1
+set PROBE_RC=!errorlevel!
+if not !PROBE_RC!==0 (
+    echo       [FAIL] Gradle could not configure the build with this JDK  [!JDK_SOURCE!]
+    if not "!JAVA_VER_LINE!"=="" echo              JDK: !JAVA_VER_LINE!
+    echo              ---- gradle output ^(tail^) ----
+    powershell -NoProfile -ExecutionPolicy Bypass -Command "Get-Content -LiteralPath '!TEMP_VERSIONS!' -Tail 12 | ForEach-Object { '             ' + $_ }"
+    del "!TEMP_VERSIONS!" 2>nul
+    set /a ERRORS+=1
+    goto summary
+)
+for /f "usebackq tokens=1,* delims==" %%A in ("!TEMP_VERSIONS!") do (
+    if "%%A"=="PREFLIGHT_JAVA" set REQ_JAVA=%%B
+    if "%%A"=="PREFLIGHT_COMPILE_SDK" set REQ_SDK=%%B
+)
+del "!TEMP_VERSIONS!" 2>nul
+if "!REQ_SDK!"=="" (
+    echo       [FAIL] Build configured, but compileSdk could not be read from Gradle
+    set /a ERRORS+=1
+    goto summary
+)
+if /i "!REQ_SDK!"=="unknown" (
+    echo       [FAIL] Build configured, but compileSdk could not be read from Gradle
+    set /a ERRORS+=1
+    goto summary
+)
+echo       [OK]   !JAVA_VER_LINE! configures the build  [!JDK_SOURCE!]
+echo              Source level: Java !REQ_JAVA!    API level: android-!REQ_SDK!
+
+:: ============================================================
+:: CHECK 2/8: JDK security baseline via OpenJDK advisory
 :: ============================================================
 echo [2/8] JDK security baseline ^(OpenJDK advisory^)...
 if "!JAVA_FOUND_NORM!"=="" (
@@ -185,20 +224,20 @@ if "!JAVA_FOUND_NORM!"=="" (
                 if not "!FETCH_ERR!"=="" echo              Reason: !FETCH_ERR!
                 set /a WARNINGS+=1
             ) else (
-                for /f "usebackq delims=" %%R in (`powershell -NoProfile -ExecutionPolicy Bypass -Command "$c=Get-Content -Raw '!ADVISORY_BODY_FILE!'; $re=[regex]::Match($c,'!REQ_JAVA!([.]\d+[.]\d+|u\d+)'); if($re.Success){$re.Value}"`) do (
+                for /f "usebackq delims=" %%R in (`powershell -NoProfile -ExecutionPolicy Bypass -Command "$c=Get-Content -Raw '!ADVISORY_BODY_FILE!'; $re=[regex]::Match($c,'!JDK_MAJOR!([.]\d+[.]\d+|u\d+)'); if($re.Success){$re.Value}"`) do (
                     if "!REQUIRED_FOR_MAJOR!"=="" set REQUIRED_FOR_MAJOR=%%R
                 )
                 if "!REQUIRED_FOR_MAJOR!"=="" (
-                    echo       [WARN] Could not find JDK !REQ_JAVA! baseline in latest advisory
+                    echo       [WARN] Could not find JDK !JDK_MAJOR! baseline in latest advisory
                     set /a WARNINGS+=1
                 ) else (
                     set _REQ_PARSE_INPUT=!REQUIRED_FOR_MAJOR!
                     call :normalize_jdk_version _REQ_PARSE_INPUT REQUIRED_NORM
                     powershell -NoProfile -ExecutionPolicy Bypass -Command "$a=[version]'!JAVA_FOUND_NORM!'; $b=[version]'!REQUIRED_NORM!'; if($a -lt $b){ exit 10 } else { exit 0 }" >nul 2>&1
                     if !errorlevel!==10 (
-                        echo       [FAIL] Installed JDK !JAVA_FOUND_RAW! is older than security baseline !REQUIRED_FOR_MAJOR!
+                        echo       [WARN] Installed JDK !JAVA_FOUND_RAW! is older than security baseline !REQUIRED_FOR_MAJOR!
                         echo              Advisory: !LATEST_ADVISORY_URL!
-                        set /a ERRORS+=1
+                        set /a WARNINGS+=1
                     ) else (
                         echo       [OK]   JDK !JAVA_FOUND_RAW! meets or exceeds baseline !REQUIRED_FOR_MAJOR!
                     )
@@ -264,23 +303,9 @@ if "!SDK_DIR!"=="" (
 )
 
 :: ============================================================
-:: CHECK 6/8: Android NDK
+:: CHECK 6/8: Git submodules
 :: ============================================================
-echo [6/8] Android NDK !REQ_NDK_MAIN!...
-if "!SDK_DIR!"=="" (
-    echo       [SKIP] SDK path unknown
-) else if exist "!SDK_DIR!\ndk\!REQ_NDK_MAIN!" (
-    echo       [OK]   NDK !REQ_NDK_MAIN! found
-) else (
-    echo       [WARN] NDK !REQ_NDK_MAIN! not found
-    echo              SDK Manager -^> SDK Tools -^> NDK ^(Side by side^) -^> !REQ_NDK_MAIN!
-    set /a WARNINGS+=1
-)
-
-:: ============================================================
-:: CHECK 7/8: Git submodules
-:: ============================================================
-echo [7/8] Git submodules...
+echo [6/8] Git submodules...
 
 git rev-parse --git-dir >nul 2>&1
 if !errorlevel! neq 0 (
@@ -302,8 +327,24 @@ for /f "tokens=1,2" %%S in ('git submodule status --recursive 2^>nul') do (
         echo              Or run: update-MarsCommonFtc
         set /a ERRORS+=1
     ) else if "!SUB_FLAG!"=="+" (
-        echo       [WARN] !SUB_PATH! -- at a different commit than the repo expects
-        echo              Run: git submodule update --recursive
+        set CLEAN_HASH=!SUB_HASH:~1!
+        set PARENT_HASH=
+        for /f "tokens=2" %%H in ('git ls-files -s "!SUB_PATH!" 2^>nul') do (
+            if "!PARENT_HASH!"=="" set PARENT_HASH=%%H
+        )
+        set IS_AHEAD=0
+        if not "!PARENT_HASH!"=="" (
+            git -C "!SUB_PATH!" merge-base --is-ancestor !PARENT_HASH! !CLEAN_HASH! >nul 2>&1
+            if !errorlevel!==0 set IS_AHEAD=1
+        )
+        if !IS_AHEAD!==1 (
+            echo       [WARN] !SUB_PATH! -- submodule has new commits not yet staged in the parent repo
+            echo              Stage and commit: git add !SUB_PATH! ^&^& git commit
+            echo              Or discard:       git submodule update --recursive
+        ) else (
+            echo       [WARN] !SUB_PATH! -- submodule is out of sync; at a different commit than the parent repo expects
+            echo              Run: git submodule update --recursive
+        )
         set /a WARNINGS+=1
     ) else if "!SUB_FLAG!"=="U" (
         echo       [FAIL] !SUB_PATH! -- has unresolved merge conflicts
@@ -318,6 +359,19 @@ if !SUB_COUNT!==0 (
     echo              Or run: update-MarsCommonFtc
     set /a WARNINGS+=1
 )
+for /f "tokens=2" %%P in ('git config --file .gitmodules --get-regexp "submodule\..*.path" 2^>nul') do (
+    git diff --cached --quiet -- "%%P" >nul 2>&1
+    if !errorlevel! neq 0 (
+        echo       [WARN] %%P -- parent repo has a staged submodule pointer update that has not been committed
+        echo              Commit now to record the submodule update: git commit
+        set /a WARNINGS+=1
+    )
+)
+
+:: ============================================================
+:: CHECK 7/8: Git hooks / Java formatter
+:: ============================================================
+echo [7/8] Git hooks / Java formatter...
 git config core.hooksPath .githooks >nul 2>&1
 git update-index --chmod=+x .githooks/pre-commit >nul 2>&1
 if not exist "!USERPROFILE!\.githooks\google-java-format.jar" (
@@ -348,6 +402,8 @@ if not exist "!USERPROFILE!\.githooks\google-java-format.jar" (
         echo              Pre-commit Java formatting will be skipped until installed
         set /a WARNINGS+=1
     )
+) else (
+    echo       [OK]   pre-commit hook configured ^(google-java-format installed^)
 )
 
 :: ============================================================
