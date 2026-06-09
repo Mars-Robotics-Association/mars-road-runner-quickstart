@@ -2,19 +2,32 @@
 
 ## How the hub computes velocity (best current understanding)
 
-According to [Game Manual 0](https://gm0.org/en/latest/docs/software/adv-control-system/sdk-motors.html),
-the REV hub firmware maintains a ring buffer of encoder positions, with a new sample added every
-**10 ms**. `getVelocity()` is derived from this buffer, giving an effective measurement window
-of ~50 ms. Both position and velocity update at ~100 Hz as the window slides forward.
+It's tempting to assume `getCurrentPosition()` and `getVelocity()` each hand you an exact,
+instantaneous number. Neither is perfect, but they're imperfect in very different ways — and
+knowing how drives every velocity-control decision below.
 
-**Model (assumed but unverified):** The hardware encoder counter runs continuously.
-The firmware snapshots this counter every 10 ms into a ring buffer. `getCurrentPosition()`
-returns the most recent snapshot; `getVelocity()` returns
-`(newest_position - oldest_position) / span`. With 6 entries (5 intervals × 10 ms = 50 ms
-span), this yields 20 TPS quantization (1 tick / 50 ms), matching observed telemetry. GM0 says
-"5-value ring buffer" — the 6th value is likely the live counter acting as the newest entry.
-REV does not publish firmware source, so this is an educated guess calibrated to match real
-behavior.
+`getCurrentPosition()` is a **live counter**: it returns the encoder's hardware edge count at the
+moment the hub reads it, with no firmware averaging and no fixed update cadence. Its imperfections
+are (1) quantization to whole encoder ticks, and (2) timing — the count crosses the hub link and
+your control loop before you see it, so the instant you *read* it isn't exactly the instant it was
+*sampled*. That gap is small on the Control Hub (USB-direct) but larger and jumpier on an Expansion
+Hub, where the read crosses the RS485 hub-to-hub link, and I2C sensor traffic in a real loop adds
+further jitter. Even so, the *value* carries none of velocity's averaging lag.
+
+`getVelocity()` is **not** instantaneous. Per [Game Manual 0](https://gm0.org/en/latest/docs/software/adv-control-system/sdk-motors.html),
+the firmware keeps a ring buffer of encoder positions, adding one every **10 ms**, and reports
+`(newest − oldest) / span` across the buffer — an average over a **~50 ms window**, refreshed at
+~100 Hz and held constant between refreshes. That has two consequences:
+
+- **Lag.** A 50 ms boxcar average lags the true signal by about half its width, so `getVelocity()`
+  trails the live position by **~25 ms**, plus a small sample-and-hold offset up to the 10 ms
+  refresh that a PLL (locked to the velocity-update edges) could pin down — about **28 ms** total.
+- **Quantization.** A 50 ms window can only resolve one extra tick at a time, so velocity arrives
+  in steps of **20 TPS** (1 tick / 50 ms), matching observed telemetry.
+
+(REV does not publish firmware source, so the buffer mechanics are an educated guess calibrated to
+match observed behavior; the live-position / windowed-velocity split itself is confirmed by
+burst-reading both back-to-back with `System.nanoTime()` stamps.)
 
 The sim model (`EncoderSim`, in `MarsCommonFtc/ControlLib`) implements this as a 6-entry ring buffer with no added noise.
 All velocity "noise" comes from integer tick rounding propagating through the ring buffer —
@@ -23,28 +36,40 @@ noise source.
 
 ## What this means for control loops
 
-- **Both position and velocity update at ~100 Hz** (every 10 ms firmware sample). At a 13 ms
-  control loop, most iterations get a fresh value, but some will read the same value twice
-  depending on timing alignment.
-- **Bulk reads** provide position and velocity from the same hub response. They do not change the
-  underlying firmware sample rate — they reduce I/O overhead by batching reads, not by sampling
-  faster.
-- Running the control loop faster than 100 Hz yields diminishing returns for encoder-based
-  feedback, since the underlying data doesn't change faster than the firmware cycle.
+- **`getVelocity()` updates at ~100 Hz** and is held between refreshes, so at a 13 ms control loop
+  some iterations read the same velocity twice. Position is live and fresh on every read, so a
+  faster loop gets genuinely newer position.
+- **Bulk reads** provide position and velocity from the same hub response. They batch I/O to cut
+  overhead; they do not change the firmware's velocity refresh rate.
+- Running the loop faster than ~100 Hz won't make `getVelocity()` any fresher (it is capped at the
+  firmware refresh), but it does give fresher position — useful if you difference position yourself
+  for lower-lag velocity (next section).
 
-## Why finite-differencing position doesn't help much
+## Computing velocity yourself from position
 
-A natural idea is to compute velocity yourself as `(pos_now - pos_prev) / dt` to get fresher
-readings. In practice this adds more noise than it removes:
+Because position is live, differencing it — `(pos_now - pos_prev) / dt` — gives velocity with
+**lower lag** than `getVelocity()`'s ~25 ms. The price is noise: differentiating amplifies two
+imperfections the firmware's long window otherwise hides.
 
-- The timestamps recorded by the control loop (via `System.nanoTime()`) reflect when the position
-  was *read*, not when the firmware *sampled* it. Jitter in the control loop rate causes
-  misalignment with the hub's locked 10 ms sample cycle, introducing noise that has nothing to do
-  with the actual motor.
-- At a 13 ms loop, a single tick of encoder error spans `1 / 0.013 = ~77 TPS` of noise, compared
-  to `1 / 0.050 = 20 TPS` from the hub's 50 ms window.
-- There is no way to recover the actual firmware sample timestamp from the SDK, so the
-  misalignment cannot be corrected.
+- **Quantization over a short window.** Differentiating a signal quantized to 1 tick over a window
+  `W` produces velocity noise `σ_v = √2·σ_q / W`. The firmware's 50 ms window gives ~8–20 TPS; a
+  single 13 ms loop step gives `1 / 0.013 ≈ 77 TPS`. The shorter the window, the noisier — this is
+  the fundamental noise-vs-lag tradeoff.
+- **Timestamp jitter.** `System.nanoTime()` records when your code *read* the value, not when the
+  hub *hardware-sampled* it. That jitter `δt` becomes a velocity error of `v·δt/dt` that grows with
+  speed. It is **far worse on an Expansion Hub**, whose encoder data crosses the RS485 link to the
+  Control Hub (added latency and jitter), than on the **Control Hub** (USB-direct). Put any encoder
+  you intend to difference for velocity on the **Control Hub**.
+- **Doing better than `getVelocity()` on both noise and lag** takes a model-based estimator (Kalman
+  / alpha-beta) driven by the **commanded motor input**, not position differencing alone — a plain
+  linear filter on position only slides along the noise-vs-lag curve.
+
+### Wiring implication
+
+On FTC robots you rarely difference *drive*-motor encoders for velocity (odometry uses position, and
+drive velocity is forgiving), so the better wiring is to put the **drive motors on the Expansion
+Hub** and reserve the **Control Hub** for mechanisms whose encoder timing matters — flywheels, arms,
+lifts: anything you velocity-control or differentiate position on.
 
 ## Noise characteristics (from telemetry analysis)
 

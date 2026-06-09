@@ -52,9 +52,11 @@ See `FlywheelsTuningBase.initHardware()` for the established pattern.
 
 ## Encoder velocity
 
-`getVelocity()` is computed in the hub firmware, not derived from `getCurrentPosition()`.
-See `encoder-velocity.md` in the `dc-motor` skill for details on timing, noise, and why
-finite-differencing position is not an improvement.
+`getVelocity()` is computed in the hub firmware as a ~50 ms boxcar refreshed at ~100 Hz — a
+smoothed, quantized average that lags real speed by ~25 ms, not an instantaneous reading.
+`getCurrentPosition()` is a live counter, fresh on every read. See `encoder-velocity.md` in the
+`dc-motor` skill for the timing/noise details and when differencing position yourself (lower lag,
+more noise) is worth it.
 
 ## Bulk caching
 
