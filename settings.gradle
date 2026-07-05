@@ -11,3 +11,11 @@ project(':ControlLib').projectDir = file('MarsCommonFtc/ControlLib')
 
 include ':ControlLab'
 project(':ControlLab').projectDir = file('MarsCommonFtc/ControlLab')
+
+// --- Road Runner modules ---
+includeBuild('libs/road-runner/road-runner') {
+    dependencySubstitution {
+        substitute module('com.acmerobotics.roadrunner:core') using project(':core')
+        substitute module('com.acmerobotics.roadrunner:actions') using project(':actions')
+    }
+}

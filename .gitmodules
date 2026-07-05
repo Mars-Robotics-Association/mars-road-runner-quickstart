@@ -4,3 +4,6 @@
 [submodule "libs/acme-local-maven"]
 	path = libs/acme-local-maven
 	url = https://github.com/Mars-Robotics-Association/AcmeLocalMaven.git
+[submodule "libs/road-runner"]
+	path = libs/road-runner
+	url = https://github.com/Mars-Robotics-Association/road-runner.git
