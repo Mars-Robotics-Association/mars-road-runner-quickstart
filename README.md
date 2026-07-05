@@ -22,6 +22,12 @@ See the [MarsCommonFtc setup guide](MarsCommonFtc/docs/SETUP.md) for detailed in
 
 The Road Runner core and actions libraries are built from source via Git submodule. The FTC-specific utilities continue to be pulled from Maven for compatibility.
 
+Building core from source adds several opt-in feedforward and path-constraint features
+that are wired into `MecanumDrive`/`TankDrive` — yaw-coupling feedforward (straight-line
+curl compensation), anisotropic mecanum feedforward, a back-EMF/traction-aware wheel
+voltage constraint, and a centripetal acceleration limit. All default to no-ops; see the
+[feedforward and constraints tuning guide](doc/feedforward-and-constraints.md).
+
 ### `ControlLib` contents (`org.marsroboticsassociation.controllib`)
 
 **Motion profiles**

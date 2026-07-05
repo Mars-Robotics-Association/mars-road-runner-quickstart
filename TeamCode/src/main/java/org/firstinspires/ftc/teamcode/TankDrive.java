@@ -10,6 +10,7 @@ import com.acmerobotics.roadrunner.Action;
 import com.acmerobotics.roadrunner.Actions;
 import com.acmerobotics.roadrunner.AngularVelConstraint;
 import com.acmerobotics.roadrunner.Arclength;
+import com.acmerobotics.roadrunner.CentripetalAccelVelConstraint;
 import com.acmerobotics.roadrunner.DualNum;
 import com.acmerobotics.roadrunner.MinVelConstraint;
 import com.acmerobotics.roadrunner.MotorFeedforward;
@@ -31,6 +32,7 @@ import com.acmerobotics.roadrunner.Twist2dDual;
 import com.acmerobotics.roadrunner.Vector2d;
 import com.acmerobotics.roadrunner.Vector2dDual;
 import com.acmerobotics.roadrunner.VelConstraint;
+import com.acmerobotics.roadrunner.YawCouplingFeedforward;
 import com.acmerobotics.roadrunner.ftc.DownsampledWriter;
 import com.acmerobotics.roadrunner.ftc.Encoder;
 import com.acmerobotics.roadrunner.ftc.FlightRecorder;
@@ -79,10 +81,27 @@ public final class TankDrive {
         public double kV = 0;
         public double kA = 0;
 
+        // Yaw-coupling feedforward. Cancels the parasitic yaw (curl) produced by forward/back
+        // translation under open-loop driving. Only the axial constants apply — a tank drive has no
+        // lateral motion. Units are volts (kS) and volts per inch/s (kV). Zero = disabled.
+        public double yawCouplingKsAxial = 0;
+        public double yawCouplingKvAxial = 0;
+
         // path profile parameters (in inches)
         public double maxWheelVel = 50;
         public double minProfileAccel = -30;
         public double maxProfileAccel = 50;
+
+        // Voltage-budget path constraint (back-EMF/traction aware). When enabled, path velocity and
+        // acceleration are limited by keeping every wheel's feedforward voltage within the budget
+        // instead of by the fixed maxWheelVel / profile-accel caps above. Requires calibrated kV, kA.
+        public boolean useWheelVoltageConstraint = false;
+        public double maxVoltageForPlanning = 11.0; // plan below the 12 V nominal to leave headroom
+        public double cruiseFraction = 0.95;        // budget spent cruising; remainder reserved for accel
+
+        // Centripetal (cornering) acceleration limit, in in/s^2. Caps speed through curves to keep
+        // the wheels from slipping sideways. Zero = disabled.
+        public double maxCentripetalAccel = 0;
 
         // turn profile parameters (in radians)
         public double maxAngVel = Math.PI; // shared with path
@@ -103,13 +122,41 @@ public final class TankDrive {
 
     public final TurnConstraints defaultTurnConstraints = new TurnConstraints(
             PARAMS.maxAngVel, -PARAMS.maxAngAccel, PARAMS.maxAngAccel);
-    public final VelConstraint defaultVelConstraint =
-            new MinVelConstraint(Arrays.asList(
-                    kinematics.new WheelVelConstraint(PARAMS.maxWheelVel),
-                    new AngularVelConstraint(PARAMS.maxAngVel)
-            ));
+    // A single WheelVoltageConstraint instance serves as both the velocity and the acceleration
+    // constraint when PARAMS.useWheelVoltageConstraint is set; null otherwise. It must be declared
+    // (and initialized) before the two constraint fields that reference it below.
+    private final TankKinematics.WheelVoltageConstraint wheelVoltageConstraint =
+            PARAMS.useWheelVoltageConstraint ? makeWheelVoltageConstraint() : null;
+
+    public final VelConstraint defaultVelConstraint = makeDefaultVelConstraint();
     public final AccelConstraint defaultAccelConstraint =
-            new ProfileAccelConstraint(PARAMS.minProfileAccel, PARAMS.maxProfileAccel);
+            wheelVoltageConstraint != null
+                    ? wheelVoltageConstraint
+                    : new ProfileAccelConstraint(PARAMS.minProfileAccel, PARAMS.maxProfileAccel);
+
+    private TankKinematics.WheelVoltageConstraint makeWheelVoltageConstraint() {
+        MotorFeedforward feedforward = new MotorFeedforward(
+                PARAMS.kS, PARAMS.kV / PARAMS.inPerTick, PARAMS.kA / PARAMS.inPerTick);
+        YawCouplingFeedforward yawCoupling = new YawCouplingFeedforward(
+                PARAMS.yawCouplingKsAxial, PARAMS.yawCouplingKvAxial);
+        return kinematics.new WheelVoltageConstraint(
+                feedforward, yawCoupling, PARAMS.maxVoltageForPlanning, PARAMS.cruiseFraction);
+    }
+
+    private VelConstraint makeDefaultVelConstraint() {
+        List<VelConstraint> constraints = new ArrayList<>();
+        if (wheelVoltageConstraint != null) {
+            // the voltage constraint's velocity limit subsumes the fixed wheel-velocity cap
+            constraints.add(wheelVoltageConstraint);
+        } else {
+            constraints.add(kinematics.new WheelVelConstraint(PARAMS.maxWheelVel));
+        }
+        constraints.add(new AngularVelConstraint(PARAMS.maxAngVel));
+        if (PARAMS.maxCentripetalAccel > 0) {
+            constraints.add(new CentripetalAccelVelConstraint(PARAMS.maxCentripetalAccel));
+        }
+        return new MinVelConstraint(constraints);
+    }
 
     public final List<DcMotorEx> leftMotors, rightMotors;
 
@@ -335,8 +382,16 @@ public final class TankDrive {
             double voltage = voltageSensor.getVoltage();
             final MotorFeedforward feedforward = new MotorFeedforward(PARAMS.kS,
                     PARAMS.kV / PARAMS.inPerTick, PARAMS.kA / PARAMS.inPerTick);
-            double leftPower = feedforward.compute(wheelVels.left) / voltage;
-            double rightPower = feedforward.compute(wheelVels.right) / voltage;
+
+            // Yaw-coupling feedforward: a per-wheel voltage that cancels the parasitic yaw from
+            // forward/back translation. Entries follow wheel order (left, right). Zero constants
+            // (the default) make this a no-op.
+            YawCouplingFeedforward yawCoupling = new YawCouplingFeedforward(
+                    PARAMS.yawCouplingKsAxial, PARAMS.yawCouplingKvAxial);
+            List<Double> yawCouplingVoltages = kinematics.yawCouplingVoltages(yawCoupling, command.value());
+
+            double leftPower = (feedforward.compute(wheelVels.left) + yawCouplingVoltages.get(0)) / voltage;
+            double rightPower = (feedforward.compute(wheelVels.right) + yawCouplingVoltages.get(1)) / voltage;
             tankCommandWriter.write(new TankCommandMessage(voltage, leftPower, rightPower));
 
             for (DcMotorEx m : leftMotors) {

@@ -47,6 +47,7 @@ import org.firstinspires.ftc.teamcode.messages.MecanumLocalizerInputsMessage;
 import org.firstinspires.ftc.teamcode.messages.PoseMessage;
 
 import java.lang.Math;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.LinkedList;
 import java.util.List;
@@ -72,10 +73,38 @@ public final class MecanumDrive {
         public double kV = 0;
         public double kA = 0;
 
+        // Anisotropic (axial vs. lateral) feedforward. Mecanum rollers scrub when strafing, which
+        // raises the effective kS/kV/kA relative to forward/rotational motion. Leave
+        // useAnisotropicFeedforward false for stock (isotropic) behavior; when true, the lateral*
+        // constants (in tick units, like kS/kV/kA) are applied to the strafe component of each wheel.
+        public boolean useAnisotropicFeedforward = false;
+        public double lateralKS = 0;
+        public double lateralKV = 0;
+        public double lateralKA = 0;
+
+        // Yaw-coupling feedforward. Cancels the parasitic yaw moment (curl) produced by chassis
+        // translation under open-loop driving. Axial constants come from a forward ramp, lateral
+        // from a strafe ramp. Units are volts (kS*) and volts per inch/s (kV*). Zero = disabled.
+        public double yawCouplingKsAxial = 0;
+        public double yawCouplingKvAxial = 0;
+        public double yawCouplingKsLateral = 0;
+        public double yawCouplingKvLateral = 0;
+
         // path profile parameters (in inches)
         public double maxWheelVel = 50;
         public double minProfileAccel = -30;
         public double maxProfileAccel = 50;
+
+        // Voltage-budget path constraint (back-EMF/traction aware). When enabled, path velocity and
+        // acceleration are limited by keeping every wheel's feedforward voltage within the budget
+        // instead of by the fixed maxWheelVel / profile-accel caps above. Requires calibrated kV, kA.
+        public boolean useWheelVoltageConstraint = false;
+        public double maxVoltageForPlanning = 11.0; // plan below the 12 V nominal to leave headroom
+        public double cruiseFraction = 0.95;        // budget spent cruising; remainder reserved for accel
+
+        // Centripetal (cornering) acceleration limit, in in/s^2. Caps speed through curves to keep
+        // the wheels from slipping sideways. Zero = disabled.
+        public double maxCentripetalAccel = 0;
 
         // turn profile parameters (in radians)
         public double maxAngVel = Math.PI; // shared with path
@@ -98,13 +127,47 @@ public final class MecanumDrive {
 
     public final TurnConstraints defaultTurnConstraints = new TurnConstraints(
             PARAMS.maxAngVel, -PARAMS.maxAngAccel, PARAMS.maxAngAccel);
-    public final VelConstraint defaultVelConstraint =
-            new MinVelConstraint(Arrays.asList(
-                    kinematics.new WheelVelConstraint(PARAMS.maxWheelVel),
-                    new AngularVelConstraint(PARAMS.maxAngVel)
-            ));
+    // A single WheelVoltageConstraint instance serves as both the velocity and the acceleration
+    // constraint when PARAMS.useWheelVoltageConstraint is set; null otherwise. It must be declared
+    // (and initialized) before the two constraint fields that reference it below.
+    private final MecanumKinematics.WheelVoltageConstraint wheelVoltageConstraint =
+            PARAMS.useWheelVoltageConstraint ? makeWheelVoltageConstraint() : null;
+
+    public final VelConstraint defaultVelConstraint = makeDefaultVelConstraint();
     public final AccelConstraint defaultAccelConstraint =
-            new ProfileAccelConstraint(PARAMS.minProfileAccel, PARAMS.maxProfileAccel);
+            wheelVoltageConstraint != null
+                    ? wheelVoltageConstraint
+                    : new ProfileAccelConstraint(PARAMS.minProfileAccel, PARAMS.maxProfileAccel);
+
+    private MecanumKinematics.WheelVoltageConstraint makeWheelVoltageConstraint() {
+        MotorFeedforward axial = new MotorFeedforward(
+                PARAMS.kS, PARAMS.kV / PARAMS.inPerTick, PARAMS.kA / PARAMS.inPerTick);
+        MotorFeedforward lateral = PARAMS.useAnisotropicFeedforward
+                ? new MotorFeedforward(
+                        PARAMS.lateralKS, PARAMS.lateralKV / PARAMS.inPerTick, PARAMS.lateralKA / PARAMS.inPerTick)
+                : axial;
+        YawCouplingFeedforward yawCoupling = new YawCouplingFeedforward(
+                PARAMS.yawCouplingKsAxial, PARAMS.yawCouplingKvAxial,
+                PARAMS.yawCouplingKsLateral, PARAMS.yawCouplingKvLateral);
+        return kinematics.new WheelVoltageConstraint(
+                new AnisotropicMotorFeedforward(axial, lateral),
+                yawCoupling, PARAMS.maxVoltageForPlanning, PARAMS.cruiseFraction);
+    }
+
+    private VelConstraint makeDefaultVelConstraint() {
+        List<VelConstraint> constraints = new ArrayList<>();
+        if (wheelVoltageConstraint != null) {
+            // the voltage constraint's velocity limit subsumes the fixed wheel-velocity cap
+            constraints.add(wheelVoltageConstraint);
+        } else {
+            constraints.add(kinematics.new WheelVelConstraint(PARAMS.maxWheelVel));
+        }
+        constraints.add(new AngularVelConstraint(PARAMS.maxAngVel));
+        if (PARAMS.maxCentripetalAccel > 0) {
+            constraints.add(new CentripetalAccelVelConstraint(PARAMS.maxCentripetalAccel));
+        }
+        return new MinVelConstraint(constraints);
+    }
 
     public final DcMotorEx leftFront, leftBack, rightBack, rightFront;
 
@@ -320,12 +383,41 @@ public final class MecanumDrive {
             MecanumKinematics.WheelVelocities<Time> wheelVels = kinematics.inverse(command);
             double voltage = voltageSensor.getVoltage();
 
-            final MotorFeedforward feedforward = new MotorFeedforward(PARAMS.kS,
-                    PARAMS.kV / PARAMS.inPerTick, PARAMS.kA / PARAMS.inPerTick);
-            double leftFrontPower = feedforward.compute(wheelVels.leftFront) / voltage;
-            double leftBackPower = feedforward.compute(wheelVels.leftBack) / voltage;
-            double rightBackPower = feedforward.compute(wheelVels.rightBack) / voltage;
-            double rightFrontPower = feedforward.compute(wheelVels.rightFront) / voltage;
+            // Base feedforward voltage per wheel. With useAnisotropicFeedforward, each wheel's strafe
+            // (lateral) velocity component is fed the separately-calibrated lateral constants; otherwise
+            // one set of constants is applied to the total wheel velocity (stock quickstart behavior).
+            double leftFrontFF, leftBackFF, rightBackFF, rightFrontFF;
+            if (PARAMS.useAnisotropicFeedforward) {
+                AnisotropicMotorFeedforward feedforward = new AnisotropicMotorFeedforward(
+                        new MotorFeedforward(PARAMS.kS, PARAMS.kV / PARAMS.inPerTick, PARAMS.kA / PARAMS.inPerTick),
+                        new MotorFeedforward(PARAMS.lateralKS, PARAMS.lateralKV / PARAMS.inPerTick,
+                                PARAMS.lateralKA / PARAMS.inPerTick));
+                MecanumKinematics.WheelVelocityComponents<Time> components = kinematics.inverseComponents(command);
+                leftFrontFF = feedforward.compute(components.axial.leftFront, components.lateral.leftFront);
+                leftBackFF = feedforward.compute(components.axial.leftBack, components.lateral.leftBack);
+                rightBackFF = feedforward.compute(components.axial.rightBack, components.lateral.rightBack);
+                rightFrontFF = feedforward.compute(components.axial.rightFront, components.lateral.rightFront);
+            } else {
+                final MotorFeedforward feedforward = new MotorFeedforward(PARAMS.kS,
+                        PARAMS.kV / PARAMS.inPerTick, PARAMS.kA / PARAMS.inPerTick);
+                leftFrontFF = feedforward.compute(wheelVels.leftFront);
+                leftBackFF = feedforward.compute(wheelVels.leftBack);
+                rightBackFF = feedforward.compute(wheelVels.rightBack);
+                rightFrontFF = feedforward.compute(wheelVels.rightFront);
+            }
+
+            // Yaw-coupling feedforward: a per-wheel voltage that cancels the parasitic yaw from chassis
+            // translation. Entries follow wheel order (leftFront, leftBack, rightBack, rightFront).
+            // Zero constants (the default) make this a no-op.
+            YawCouplingFeedforward yawCoupling = new YawCouplingFeedforward(
+                    PARAMS.yawCouplingKsAxial, PARAMS.yawCouplingKvAxial,
+                    PARAMS.yawCouplingKsLateral, PARAMS.yawCouplingKvLateral);
+            List<Double> yawCouplingVoltages = kinematics.yawCouplingVoltages(yawCoupling, command.value());
+
+            double leftFrontPower = (leftFrontFF + yawCouplingVoltages.get(0)) / voltage;
+            double leftBackPower = (leftBackFF + yawCouplingVoltages.get(1)) / voltage;
+            double rightBackPower = (rightBackFF + yawCouplingVoltages.get(2)) / voltage;
+            double rightFrontPower = (rightFrontFF + yawCouplingVoltages.get(3)) / voltage;
             mecanumCommandWriter.write(new MecanumCommandMessage(
                     voltage, leftFrontPower, leftBackPower, rightBackPower, rightFrontPower
             ));

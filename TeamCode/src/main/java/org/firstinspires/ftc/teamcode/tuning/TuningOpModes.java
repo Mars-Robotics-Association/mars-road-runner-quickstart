@@ -300,6 +300,13 @@ public final class TuningOpModes {
         manager.register(metaForClass(SplineTest.class), SplineTest.class);
         manager.register(metaForClass(LocalizationTest.class), LocalizationTest.class);
 
+        // MARS extensions: automatic on-robot tuners for the new feedforward constants
+        manager.register(metaForClass(YawCouplingTuner.class), YawCouplingTuner.class);
+        manager.register(metaForClass(AxialFeedforwardTuner.class), AxialFeedforwardTuner.class);
+        if (DRIVE_CLASS.equals(MecanumDrive.class)) {
+            manager.register(metaForClass(LateralFeedforwardTuner.class), LateralFeedforwardTuner.class);
+        }
+
         manager.register(metaForClass(OTOSAngularScalarTuner.class), new OTOSAngularScalarTuner(dvf));
         manager.register(metaForClass(OTOSLinearScalarTuner.class), new OTOSLinearScalarTuner(dvf));
         manager.register(metaForClass(OTOSHeadingOffsetTuner.class), new OTOSHeadingOffsetTuner(dvf));
@@ -312,7 +319,11 @@ public final class TuningOpModes {
                     LateralRampLogger.class,
                     ManualFeedforwardTuner.class,
                     MecanumMotorDirectionDebugger.class,
-                    ManualFeedbackTuner.class
+                    ManualFeedbackTuner.class,
+                    YawCouplingTuner.class,
+                    AxialFeedforwardTuner.class,
+                    LateralFeedforwardTuner.class,
+                    TunerRegression.class
             )) {
                 configRoot.putVariable(c.getSimpleName(), ReflectionConfig.createVariableFromClass(c));
             }
