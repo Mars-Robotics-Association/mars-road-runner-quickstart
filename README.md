@@ -15,25 +15,20 @@ Shared modules live in the [MarsCommonFtc](https://github.com/Mars-Robotics-Asso
 | `ControlLib` | MARS control library — motion profiles, filters, localization, simulation, and hardware helpers |
 | `ControlLab` | Desktop Java app for offline tuning and signal visualization (uses XChart + ControlLib) |
 | `WpiMath` | Port of WPILib's math library (geometry, kinematics, estimators, trajectories, controllers, filters, state-space) |
-| `RuckigNative` | Android NDK module that wraps the [Ruckig](https://ruckig.com/) C++ trajectory planner via JNI |
 
 See the [MarsCommonFtc setup guide](MarsCommonFtc/docs/SETUP.md) for detailed instructions on adding it to other robot projects.
 
-### External git submodules (`external/`)
+### Road Runner submodule (`libs/road-runner/`)
 
-| Submodule | What it is |
-|-----------|-----------|
-| `external/road-runner` | Road Runner core library (source) |
-| `external/road-runner-ftc` | Road Runner FTC adapter (source) |
-| `external/ftc-dashboard` | FTC Dashboard (source) |
-| `external/road-runner-wrapper` | Composite build wrapper so all three above are built from source instead of pulled from Maven |
+The Road Runner core and actions libraries are built from source via Git submodule on the `vel-dependent-constraints` branch. This includes velocity-dependent acceleration constraints and feedforward tuning.
+
+The FTC-specific utilities (`ftc:0.1.25`) continue to be pulled from Maven for compatibility.
 
 ### `ControlLib` contents (`org.marsroboticsassociation.controllib`)
 
 **Motion profiles**
 - `SCurvePosition` / `SCurveVelocity` — jerk-limited S-curve motion profiles
 - `PositionTrajectoryManager` / `VelocityTrajectoryManager` — stateful trajectory runners
-- `ruckig/RuckigController` — Java wrapper around the Ruckig JNI layer for time-optimal trajectories
 
 **Filters**
 - `BiquadLowPassVarDt` — biquad low-pass filter with variable dt
@@ -67,15 +62,7 @@ See the [MarsCommonFtc setup guide](MarsCommonFtc/docs/SETUP.md) for detailed in
 
 A standalone Java application (`./gradlew :ControlLab:run`) for offline
 analysis. Reads CSV signal files, applies filters from `ControlLib`, and
-renders plots via XChart. Requires CMake on PATH to also build the Ruckig JNI
-library for desktop use.
-
-### `RuckigNative` NDK module
-
-Wraps the Ruckig C++ library as an Android shared library (`libruckig_jni.so`).
-Exposes a JNI interface consumed by `RuckigController` in `ControlLib`.
-The `ControlLab` desktop Gradle task also builds a desktop version of the same
-JNI wrapper via CMake so the same `RuckigController` class works off-robot.
+renders plots via XChart.
 
 ## Cloning
 
@@ -89,15 +76,9 @@ git submodule update --init --recursive
 
 ## Build notes
 
-- Road Runner, FTC Dashboard, and the Road Runner FTC adapter are all built
-  from source via the composite build in `external/road-runner-wrapper/`.
-  There is no need to modify `TeamCode/build.gradle` to point at Maven
-  artifacts — dependency substitution is handled automatically in
-  `settings.gradle`.
-- `RuckigNative` is built by the Android NDK as part of the normal Android
-  build. The `ControlLab` desktop run task builds a separate desktop JNI
-  library via CMake (requires CMake on PATH; the task is silently skipped if
-  CMake is absent).
+- Road Runner core and actions libraries are built from source via composite
+  build with the `libs/road-runner/` submodule. Dependency substitution in
+  `settings.gradle` automatically redirects Maven artifacts to local projects.
 - `WpiMath` and `ControlLib` are plain Java modules; they run on the desktop
   JVM and on Android equally. `ControlLib` uses a shadow JAR to relocate EJML
   and avoid classpath conflicts on the robot.
