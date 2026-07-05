@@ -20,9 +20,7 @@ See the [MarsCommonFtc setup guide](MarsCommonFtc/docs/SETUP.md) for detailed in
 
 ### Road Runner submodule (`libs/road-runner/`)
 
-The Road Runner core and actions libraries are built from source via Git submodule on the `vel-dependent-constraints` branch. This includes velocity-dependent acceleration constraints and feedforward tuning.
-
-The FTC-specific utilities (`ftc:0.1.25`) continue to be pulled from Maven for compatibility.
+The Road Runner core and actions libraries are built from source via Git submodule. The FTC-specific utilities continue to be pulled from Maven for compatibility.
 
 ### `ControlLib` contents (`org.marsroboticsassociation.controllib`)
 
