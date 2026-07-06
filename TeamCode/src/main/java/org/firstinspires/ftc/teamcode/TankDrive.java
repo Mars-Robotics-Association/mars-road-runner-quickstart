@@ -325,6 +325,37 @@ public final class TankDrive {
         }
     }
 
+    /**
+     * Applies a follower velocity/acceleration command to the wheels through the full production
+     * feedforward path: drive constants, yaw-coupling voltages, and battery voltage compensation.
+     * Shared by {@link FollowTrajectoryAction} and the feedback-gain tuner so gain tests exercise
+     * exactly the voltages the follower applies.
+     */
+    public void setDriveCommand(PoseVelocity2dDual<Time> command) {
+        TankKinematics.WheelVelocities<Time> wheelVels = kinematics.inverse(command);
+        double voltage = voltageSensor.getVoltage();
+        final MotorFeedforward feedforward = new MotorFeedforward(PARAMS.kS,
+                PARAMS.kV / PARAMS.inPerTick, PARAMS.kA / PARAMS.inPerTick);
+
+        // Yaw-coupling feedforward: a per-wheel voltage that cancels the parasitic yaw from
+        // forward/back translation. Entries follow wheel order (left, right). Zero constants
+        // (the default) make this a no-op.
+        YawCouplingFeedforward yawCoupling = new YawCouplingFeedforward(
+                PARAMS.yawCouplingKsAxial, PARAMS.yawCouplingKvAxial);
+        List<Double> yawCouplingVoltages = kinematics.yawCouplingVoltages(yawCoupling, command.value());
+
+        double leftPower = (feedforward.compute(wheelVels.left) + yawCouplingVoltages.get(0)) / voltage;
+        double rightPower = (feedforward.compute(wheelVels.right) + yawCouplingVoltages.get(1)) / voltage;
+        tankCommandWriter.write(new TankCommandMessage(voltage, leftPower, rightPower));
+
+        for (DcMotorEx m : leftMotors) {
+            m.setPower(leftPower);
+        }
+        for (DcMotorEx m : rightMotors) {
+            m.setPower(rightPower);
+        }
+    }
+
     public final class FollowTrajectoryAction implements Action {
         public final TimeTrajectory timeTrajectory;
         private double beginTs = -1;
@@ -378,28 +409,7 @@ public final class TankDrive {
                     .compute(x, txWorldTarget, localizer.getPose());
             driveCommandWriter.write(new DriveCommandMessage(command));
 
-            TankKinematics.WheelVelocities<Time> wheelVels = kinematics.inverse(command);
-            double voltage = voltageSensor.getVoltage();
-            final MotorFeedforward feedforward = new MotorFeedforward(PARAMS.kS,
-                    PARAMS.kV / PARAMS.inPerTick, PARAMS.kA / PARAMS.inPerTick);
-
-            // Yaw-coupling feedforward: a per-wheel voltage that cancels the parasitic yaw from
-            // forward/back translation. Entries follow wheel order (left, right). Zero constants
-            // (the default) make this a no-op.
-            YawCouplingFeedforward yawCoupling = new YawCouplingFeedforward(
-                    PARAMS.yawCouplingKsAxial, PARAMS.yawCouplingKvAxial);
-            List<Double> yawCouplingVoltages = kinematics.yawCouplingVoltages(yawCoupling, command.value());
-
-            double leftPower = (feedforward.compute(wheelVels.left) + yawCouplingVoltages.get(0)) / voltage;
-            double rightPower = (feedforward.compute(wheelVels.right) + yawCouplingVoltages.get(1)) / voltage;
-            tankCommandWriter.write(new TankCommandMessage(voltage, leftPower, rightPower));
-
-            for (DcMotorEx m : leftMotors) {
-                m.setPower(leftPower);
-            }
-            for (DcMotorEx m : rightMotors) {
-                m.setPower(rightPower);
-            }
+            setDriveCommand(command);
 
             p.put("x", localizer.getPose().position.x);
             p.put("y", localizer.getPose().position.y);
@@ -470,11 +480,13 @@ public final class TankDrive {
 
             PoseVelocity2d robotVelRobot = updatePoseEstimate();
 
+            // Positive gains act on (target - actual), matching HolonomicController's convention.
+            // (The stock quickstart has the operands flipped, which makes positive gains unstable.)
             PoseVelocity2dDual<Time> command = new PoseVelocity2dDual<>(
                     Vector2dDual.constant(new Vector2d(0, 0), 3),
                     txWorldTarget.heading.velocity().plus(
-                            PARAMS.turnGain * localizer.getPose().heading.minus(txWorldTarget.heading.value()) +
-                            PARAMS.turnVelGain * (robotVelRobot.angVel - txWorldTarget.heading.velocity().value())
+                            PARAMS.turnGain * txWorldTarget.heading.value().minus(localizer.getPose().heading) +
+                            PARAMS.turnVelGain * (txWorldTarget.heading.velocity().value() - robotVelRobot.angVel)
                     )
             );
             driveCommandWriter.write(new DriveCommandMessage(command));

@@ -22,11 +22,19 @@ See the [MarsCommonFtc setup guide](MarsCommonFtc/docs/SETUP.md) for detailed in
 
 The Road Runner core and actions libraries are built from source via Git submodule. The FTC-specific utilities continue to be pulled from Maven for compatibility.
 
-Building core from source adds several opt-in feedforward and path-constraint features
-that are wired into `MecanumDrive`/`TankDrive` — yaw-coupling feedforward (straight-line
-curl compensation), anisotropic mecanum feedforward, a back-EMF/traction-aware wheel
-voltage constraint, and a centripetal acceleration limit. All default to no-ops; see the
-[feedforward and constraints tuning guide](doc/feedforward-and-constraints.md).
+Building core from source adds velocity-dependent feedforward and path-constraint features
+wired into `MecanumDrive`/`TankDrive`: yaw-coupling feedforward (straight-line curl compensation),
+anisotropic mecanum feedforward (separate axial and lateral constants), a voltage-aware wheel
+constraint (adapts path velocity to available headroom), and a centripetal acceleration limit
+(cornering speed cap). All default to no-ops; automatic tuners are provided for each.
+
+Tuning is largely automated: on-robot sysid OpModes identify the feedforward constants
+(`AxialFeedforwardTuner`, `LateralFeedforwardTuner`, `YawCouplingTuner`), `TrackWidthTuner`
+corrects the effective track width (the only way to measure it on Pinpoint/OTOS setups),
+and `FeedbackGainTuner` finds the follower feedback gains by automated bump tests. See the
+[automated tuning flow](docs/tuning.md) for the recommended procedure and the
+[feedforward and constraints guide](docs/feedforward-and-constraints.md) for the models
+behind the extensions.
 
 ### `ControlLib` contents (`org.marsroboticsassociation.controllib`)
 

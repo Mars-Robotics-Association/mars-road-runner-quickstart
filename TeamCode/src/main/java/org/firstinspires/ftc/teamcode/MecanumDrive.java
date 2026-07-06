@@ -328,6 +328,61 @@ public final class MecanumDrive {
         rightFront.setPower(wheelVels.rightFront.get(0) / maxPowerMag);
     }
 
+    /**
+     * Applies a follower velocity/acceleration command to the wheels through the full production
+     * feedforward path: anisotropic constants (when enabled), yaw-coupling voltages, and battery
+     * voltage compensation. Shared by {@link FollowTrajectoryAction} and the feedback-gain tuner
+     * so gain tests exercise exactly the voltages the follower applies.
+     */
+    public void setDriveCommand(PoseVelocity2dDual<Time> command) {
+        MecanumKinematics.WheelVelocities<Time> wheelVels = kinematics.inverse(command);
+        double voltage = voltageSensor.getVoltage();
+
+        // Base feedforward voltage per wheel. With useAnisotropicFeedforward, each wheel's strafe
+        // (lateral) velocity component is fed the separately-calibrated lateral constants; otherwise
+        // one set of constants is applied to the total wheel velocity (stock quickstart behavior).
+        double leftFrontFF, leftBackFF, rightBackFF, rightFrontFF;
+        if (PARAMS.useAnisotropicFeedforward) {
+            AnisotropicMotorFeedforward feedforward = new AnisotropicMotorFeedforward(
+                    new MotorFeedforward(PARAMS.kS, PARAMS.kV / PARAMS.inPerTick, PARAMS.kA / PARAMS.inPerTick),
+                    new MotorFeedforward(PARAMS.lateralKS, PARAMS.lateralKV / PARAMS.inPerTick,
+                            PARAMS.lateralKA / PARAMS.inPerTick));
+            MecanumKinematics.WheelVelocityComponents<Time> components = kinematics.inverseComponents(command);
+            leftFrontFF = feedforward.compute(components.axial.leftFront, components.lateral.leftFront);
+            leftBackFF = feedforward.compute(components.axial.leftBack, components.lateral.leftBack);
+            rightBackFF = feedforward.compute(components.axial.rightBack, components.lateral.rightBack);
+            rightFrontFF = feedforward.compute(components.axial.rightFront, components.lateral.rightFront);
+        } else {
+            final MotorFeedforward feedforward = new MotorFeedforward(PARAMS.kS,
+                    PARAMS.kV / PARAMS.inPerTick, PARAMS.kA / PARAMS.inPerTick);
+            leftFrontFF = feedforward.compute(wheelVels.leftFront);
+            leftBackFF = feedforward.compute(wheelVels.leftBack);
+            rightBackFF = feedforward.compute(wheelVels.rightBack);
+            rightFrontFF = feedforward.compute(wheelVels.rightFront);
+        }
+
+        // Yaw-coupling feedforward: a per-wheel voltage that cancels the parasitic yaw from chassis
+        // translation. Entries follow wheel order (leftFront, leftBack, rightBack, rightFront).
+        // Zero constants (the default) make this a no-op.
+        YawCouplingFeedforward yawCoupling = new YawCouplingFeedforward(
+                PARAMS.yawCouplingKsAxial, PARAMS.yawCouplingKvAxial,
+                PARAMS.yawCouplingKsLateral, PARAMS.yawCouplingKvLateral);
+        List<Double> yawCouplingVoltages = kinematics.yawCouplingVoltages(yawCoupling, command.value());
+
+        double leftFrontPower = (leftFrontFF + yawCouplingVoltages.get(0)) / voltage;
+        double leftBackPower = (leftBackFF + yawCouplingVoltages.get(1)) / voltage;
+        double rightBackPower = (rightBackFF + yawCouplingVoltages.get(2)) / voltage;
+        double rightFrontPower = (rightFrontFF + yawCouplingVoltages.get(3)) / voltage;
+        mecanumCommandWriter.write(new MecanumCommandMessage(
+                voltage, leftFrontPower, leftBackPower, rightBackPower, rightFrontPower
+        ));
+
+        leftFront.setPower(leftFrontPower);
+        leftBack.setPower(leftBackPower);
+        rightBack.setPower(rightBackPower);
+        rightFront.setPower(rightFrontPower);
+    }
+
     public final class FollowTrajectoryAction implements Action {
         public final TimeTrajectory timeTrajectory;
         private double beginTs = -1;
@@ -380,52 +435,7 @@ public final class MecanumDrive {
                     .compute(txWorldTarget, localizer.getPose(), robotVelRobot);
             driveCommandWriter.write(new DriveCommandMessage(command));
 
-            MecanumKinematics.WheelVelocities<Time> wheelVels = kinematics.inverse(command);
-            double voltage = voltageSensor.getVoltage();
-
-            // Base feedforward voltage per wheel. With useAnisotropicFeedforward, each wheel's strafe
-            // (lateral) velocity component is fed the separately-calibrated lateral constants; otherwise
-            // one set of constants is applied to the total wheel velocity (stock quickstart behavior).
-            double leftFrontFF, leftBackFF, rightBackFF, rightFrontFF;
-            if (PARAMS.useAnisotropicFeedforward) {
-                AnisotropicMotorFeedforward feedforward = new AnisotropicMotorFeedforward(
-                        new MotorFeedforward(PARAMS.kS, PARAMS.kV / PARAMS.inPerTick, PARAMS.kA / PARAMS.inPerTick),
-                        new MotorFeedforward(PARAMS.lateralKS, PARAMS.lateralKV / PARAMS.inPerTick,
-                                PARAMS.lateralKA / PARAMS.inPerTick));
-                MecanumKinematics.WheelVelocityComponents<Time> components = kinematics.inverseComponents(command);
-                leftFrontFF = feedforward.compute(components.axial.leftFront, components.lateral.leftFront);
-                leftBackFF = feedforward.compute(components.axial.leftBack, components.lateral.leftBack);
-                rightBackFF = feedforward.compute(components.axial.rightBack, components.lateral.rightBack);
-                rightFrontFF = feedforward.compute(components.axial.rightFront, components.lateral.rightFront);
-            } else {
-                final MotorFeedforward feedforward = new MotorFeedforward(PARAMS.kS,
-                        PARAMS.kV / PARAMS.inPerTick, PARAMS.kA / PARAMS.inPerTick);
-                leftFrontFF = feedforward.compute(wheelVels.leftFront);
-                leftBackFF = feedforward.compute(wheelVels.leftBack);
-                rightBackFF = feedforward.compute(wheelVels.rightBack);
-                rightFrontFF = feedforward.compute(wheelVels.rightFront);
-            }
-
-            // Yaw-coupling feedforward: a per-wheel voltage that cancels the parasitic yaw from chassis
-            // translation. Entries follow wheel order (leftFront, leftBack, rightBack, rightFront).
-            // Zero constants (the default) make this a no-op.
-            YawCouplingFeedforward yawCoupling = new YawCouplingFeedforward(
-                    PARAMS.yawCouplingKsAxial, PARAMS.yawCouplingKvAxial,
-                    PARAMS.yawCouplingKsLateral, PARAMS.yawCouplingKvLateral);
-            List<Double> yawCouplingVoltages = kinematics.yawCouplingVoltages(yawCoupling, command.value());
-
-            double leftFrontPower = (leftFrontFF + yawCouplingVoltages.get(0)) / voltage;
-            double leftBackPower = (leftBackFF + yawCouplingVoltages.get(1)) / voltage;
-            double rightBackPower = (rightBackFF + yawCouplingVoltages.get(2)) / voltage;
-            double rightFrontPower = (rightFrontFF + yawCouplingVoltages.get(3)) / voltage;
-            mecanumCommandWriter.write(new MecanumCommandMessage(
-                    voltage, leftFrontPower, leftBackPower, rightBackPower, rightFrontPower
-            ));
-
-            leftFront.setPower(leftFrontPower);
-            leftBack.setPower(leftBackPower);
-            rightBack.setPower(rightBackPower);
-            rightFront.setPower(rightFrontPower);
+            setDriveCommand(command);
 
             p.put("x", localizer.getPose().position.x);
             p.put("y", localizer.getPose().position.y);

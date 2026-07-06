@@ -12,8 +12,10 @@ This document covers, for both `MecanumDrive` and `TankDrive`:
 3. [Wheel voltage constraint](#3-wheel-voltage-constraint) — back-EMF/traction-aware limits
 4. [Centripetal acceleration constraint](#4-centripetal-acceleration-constraint) — cornering limit
 
-Tune these **after** completing the normal quickstart tuning (drive model, feedforward
-`kS`/`kV`/`kA`, and the position/heading gains). They refine an already-working robot.
+Tune these as part of the [automated tuning flow](tuning.md) — after localization and the
+drive feedforward (`kS`/`kV`/`kA` via `AxialFeedforwardTuner`), and before the feedback
+gains (`FeedbackGainTuner` folds the constants below into its plant model). They refine an
+already-working robot.
 
 ---
 
@@ -114,7 +116,7 @@ open-loop square wave sideways (left/right reversals) and fits all three lateral
 including `lateralKA` — at once via the integral method. Wheel velocity is taken from the
 localizer's lateral chassis velocity times the drive's `lateralMultiplier`.
 
-1. Complete normal forward feedforward tuning to get `kS`/`kV`/`kA` (the **axial** constants).
+1. Run `AxialFeedforwardTuner` to get `kS`/`kV`/`kA` (the **axial** constants).
 2. Clear a sideways lane of a few feet on both sides and run `LateralFeedforwardTuner`.
 3. Paste the printed `lateralKS` / `lateralKV` / `lateralKA` into `Params` and set
    `useAnisotropicFeedforward = true`.
