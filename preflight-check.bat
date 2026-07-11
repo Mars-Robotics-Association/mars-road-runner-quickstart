@@ -324,7 +324,7 @@ for /f "tokens=1,2" %%S in ('git submodule status --recursive 2^>nul') do (
     if "!SUB_FLAG!"=="-" (
         echo       [FAIL] !SUB_PATH! -- not initialized
         echo              Run: git submodule update --init --recursive
-        echo              Or run: update-MarsCommonFtc
+        echo              Or run: update-submodules
         set /a ERRORS+=1
     ) else if "!SUB_FLAG!"=="+" (
         set CLEAN_HASH=!SUB_HASH:~1!
@@ -356,7 +356,7 @@ for /f "tokens=1,2" %%S in ('git submodule status --recursive 2^>nul') do (
 if !SUB_COUNT!==0 (
     echo       [WARN] No submodule status returned -- submodules may not be initialized
     echo              Run: git submodule update --init --recursive
-    echo              Or run: update-MarsCommonFtc
+    echo              Or run: update-submodules
     set /a WARNINGS+=1
 )
 for /f "tokens=2" %%P in ('git config --file .gitmodules --get-regexp "submodule\..*.path" 2^>nul') do (
