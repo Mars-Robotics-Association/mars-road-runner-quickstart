@@ -1,7 +1,8 @@
 package org.firstinspires.ftc.teamcode.vision;
 
-import com.acmerobotics.dashboard.FtcDashboard;
+import com.acmerobotics.dashboard.canvas.Canvas;
 import com.acmerobotics.dashboard.telemetry.MultipleTelemetry;
+import com.acmerobotics.dashboard.telemetry.TelemetryPacket;
 import com.acmerobotics.roadrunner.Pose2d;
 import com.acmerobotics.roadrunner.PoseVelocity2d;
 import com.acmerobotics.roadrunner.Vector2d;
@@ -11,12 +12,14 @@ import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
 
 import org.firstinspires.ftc.teamcode.Drawing;
 import org.firstinspires.ftc.teamcode.MecanumDrive;
+import org.firstinspires.ftc.teamcode.utils.DashboardTelemetryPacketAccess;
 
 /**
  * Demo TeleOp for the multi-hypothesis bank localizer (the quickstart equivalent of the source
  * project's {@code VisionFusionViz}). Drives a mecanum robot while a {@link
- * HypothesisBankRoadRunnerLocalizer} fuses Pinpoint/odometry with Limelight AprilTag branches, and
- * shows the fused pose + commitment on telemetry and the FTC Dashboard field overlay.
+ * HypothesisBankRoadRunnerLocalizer} fuses Pinpoint/odometry with Limelight AprilTag branches,
+ * shows the fused pose + commitment on telemetry and the FTC Dashboard field overlay, and records a
+ * per-run CSV under {@code FIRST/} for offline analysis.
  *
  * <p>Setup: a Limelight configured as {@code "limelight"} with an AprilTag pipeline on index 0 and
  * "output corners" enabled, plus the standard quickstart drive/odometry config. Point the camera at
@@ -33,7 +36,11 @@ public class HypothesisBankLocalizerDemo extends LinearOpMode {
 
     @Override
     public void runOpMode() {
-        telemetry = new MultipleTelemetry(telemetry, FtcDashboard.getInstance().getTelemetry());
+        // Route telemetry to both the Driver Station and the dashboard, and keep a handle on the
+        // dashboard's own TelemetryPacket so the field overlay is drawn onto the same packet that
+        // telemetry.update() flushes (one update per loop, no competing sendTelemetryPacket call).
+        DashboardTelemetryPacketAccess packetAccess = new DashboardTelemetryPacketAccess();
+        telemetry = new MultipleTelemetry(telemetry, packetAccess.dashboardTelemetry);
 
         Pose2d startPose = new Pose2d(START_X, START_Y, Math.toRadians(START_HEADING_DEG));
         MecanumDrive drive = new MecanumDrive(hardwareMap, startPose);
@@ -55,8 +62,14 @@ public class HypothesisBankLocalizerDemo extends LinearOpMode {
         source.prefetchCalibration(3000);
         limelight.start();
 
+        // Per-run offline-analysis log under FIRST/. The shared logger pulls the full debug row
+        // (poses, frame quality, branch poses, bank state) from the localizer each loop; rows are
+        // buffered and flushed in bursts so the control loop isn't stalled on disk I/O.
+        BankLocalizerCsvLogger csv = new BankLocalizerCsvLogger("bank_localizer");
+
         telemetry.addLine("Ready. Field view on FTC Dashboard. Point at a mapped tag to commit.");
         telemetry.addLine("Left stick translate, right stick rotate. Y = reset to start pose.");
+        telemetry.addData("csv", csv.fileName());
         telemetry.update();
 
         waitForStart();
@@ -85,13 +98,22 @@ public class HypothesisBankLocalizerDemo extends LinearOpMode {
             telemetry.addData("committed", localizer.isCommitted());
             telemetry.addData("dominant weight", "%.2f", localizer.dominantWeight());
 
-            com.acmerobotics.dashboard.telemetry.TelemetryPacket packet =
-                    new com.acmerobotics.dashboard.telemetry.TelemetryPacket();
-            packet.fieldOverlay().setStroke("#4CAF50");
-            Drawing.drawRobot(packet.fieldOverlay(), pose);
-            FtcDashboard.getInstance().sendTelemetryPacket(packet);
+            // Draw the fused robot onto the dashboard's own packet (guarded — reflection can fail
+            // on
+            // an SDK/dashboard version change), then let telemetry.update() flush it.
+            TelemetryPacket packet = packetAccess.getTelemetryPacket();
+            if (packet != null) {
+                Canvas c = packet.fieldOverlay();
+                c.setStroke("#4CAF50");
+                Drawing.drawRobot(c, pose);
+            }
+
+            // Record the full debug row (poses, frame quality, branch poses, bank state).
+            csv.log(localizer);
 
             telemetry.update();
         }
+
+        csv.close(); // final flush of any buffered rows
     }
 }

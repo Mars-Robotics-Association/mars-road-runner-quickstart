@@ -132,6 +132,25 @@ public final class HypothesisBankRoadRunnerLocalizer implements Localizer {
         return core.dominantWeight();
     }
 
+    /**
+     * The raw (uncorrected) odometry pose this loop, Road Runner frame — for logging/diagnostics.
+     */
+    public com.acmerobotics.roadrunner.Pose2d getOdometryPose() {
+        return odometry.getPose();
+    }
+
+    /** The pure library core, for diagnostic access (see {@link BankLocalizerCsvLogger}). */
+    public HypothesisBankLocalizer core() {
+        return core;
+    }
+
+    /**
+     * The vision source, for its calibration (intrinsics/distortion) when logging the replay row.
+     */
+    public VisionSource visionSource() {
+        return source;
+    }
+
     private static edu.wpi.first.math.geometry.Pose2d toWpi(com.acmerobotics.roadrunner.Pose2d p) {
         return new edu.wpi.first.math.geometry.Pose2d(
                 p.position.x, p.position.y, new Rotation2d(p.heading.toDouble()));
