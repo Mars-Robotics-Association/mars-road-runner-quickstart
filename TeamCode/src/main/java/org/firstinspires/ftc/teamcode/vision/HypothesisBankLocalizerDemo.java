@@ -23,8 +23,10 @@ import org.firstinspires.ftc.teamcode.utils.DashboardTelemetryPacketAccess;
  *
  * <p>Setup: a Limelight configured as {@code "limelight"} with an AprilTag pipeline on index 0 and
  * "output corners" enabled, plus the standard quickstart drive/odometry config. Point the camera at
- * a mapped tag so the bank can commit (watch {@code bank_committed}). The tag field-pose table and
- * camera extrinsic come from {@code VisionPoseSolverConfig} — replace those with your field/robot.
+ * a mapped tag so the bank can commit (watch {@code bank_committed}). Geometry is quickstart-owned:
+ * camera extrinsics in {@link HypothesisBankRoadRunnerLocalizer.Params} {@code camera*} fields (or
+ * FTC Dashboard), field tag poses in {@link FieldTagMap}. ControlLib only supplies frame
+ * conventions and the pure solver.
  */
 @TeleOp(name = "Hypothesis Bank Localizer Demo", group = "vision")
 public class HypothesisBankLocalizerDemo extends LinearOpMode {

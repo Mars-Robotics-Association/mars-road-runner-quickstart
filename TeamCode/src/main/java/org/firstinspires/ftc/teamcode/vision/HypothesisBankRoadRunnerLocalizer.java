@@ -8,6 +8,7 @@ import edu.wpi.first.math.geometry.Rotation2d;
 import org.firstinspires.ftc.robotcore.external.Telemetry;
 import org.firstinspires.ftc.teamcode.Localizer;
 import org.marsroboticsassociation.controllib.localization.vision.HypothesisBankLocalizer;
+import org.marsroboticsassociation.controllib.localization.vision.Transform3D;
 import org.marsroboticsassociation.controllib.localization.vision.VisionPoseSolver;
 import org.marsroboticsassociation.controllib.localization.vision.VisionPoseSolverConfig;
 import org.marsroboticsassociation.controllib.localization.vision.VisionSource;
@@ -25,10 +26,14 @@ import java.util.function.LongSupplier;
  * is desktop-testable; nothing library-specific leaks into it. Swap this adapter for a Pedro
  * Pathing one (same core, different pose conversions) to use the localizer with another drive
  * library.
+ *
+ * <p><b>Per-robot camera extrinsics</b> live in {@link Params} (Limelight {@code rs*} style). The
+ * <b>field tag map</b> lives in {@link FieldTagMap}. Neither is shared across robots/seasons in
+ * MarsCommonFtc — edit them in this quickstart for your robot and game map.
  */
 public final class HypothesisBankRoadRunnerLocalizer implements Localizer {
 
-    /** FtcDashboard-tunable configuration (live). */
+    /** FtcDashboard-tunable configuration (live for core/tag; extrinsics applied at construction). */
     @Config
     public static class Params {
         /** The pure library core's tuning (bank + commit + latency + blur gate). */
@@ -42,6 +47,28 @@ public final class HypothesisBankRoadRunnerLocalizer implements Localizer {
          * disables the area filter (any tag qualifies).
          */
         public double ambiguityMinTagAreaPct = 0.0;
+
+        // --- camera extrinsic (Limelight .vpr "camera pose in robot space", per-robot) ----------
+        // Match this robot's Limelight config (or a hand-eye solve). Units: metres / degrees.
+        // Defaults below are one known good mount (Curiosity DECODE); replace for every other robot.
+
+        /** Camera forward of robot origin (m). Limelight {@code rsforward}. */
+        public double cameraForwardM = 0.0816;
+
+        /** Camera left of robot origin (m); right is negative. Limelight {@code rsside}. */
+        public double cameraSideM = -0.0400;
+
+        /** Camera height above floor / robot origin (m). Limelight {@code rsup}. */
+        public double cameraUpM = 0.3835;
+
+        /** Camera roll (deg). 180 = mounted upside-down. Limelight {@code rsroll}. */
+        public double cameraRollDeg = 180.0;
+
+        /** Camera pitch (deg); positive = nose up. Limelight {@code rspitch}. */
+        public double cameraPitchDeg = 0.23;
+
+        /** Camera yaw (deg); positive = left. Limelight {@code rsyaw}. */
+        public double cameraYawDeg = -0.78;
     }
 
     public static Params PARAMS = new Params();
@@ -53,8 +80,8 @@ public final class HypothesisBankRoadRunnerLocalizer implements Localizer {
     private final HypothesisBankLocalizer core;
 
     /**
-     * Constructs the adapter with the default {@link VisionPoseSolverConfig} solver and the {@link
-     * System#nanoTime()} clock.
+     * Constructs the adapter with a solver built from {@link #PARAMS} camera extrinsics and the
+     * {@link System#nanoTime()} clock.
      *
      * @param odometry the odometry localizer (the rigid backbone; its raw pose need not be
      *     field-aligned — the bank maps it to the field)
@@ -70,10 +97,27 @@ public final class HypothesisBankRoadRunnerLocalizer implements Localizer {
         this(
                 odometry,
                 source,
-                new VisionPoseSolverConfig().solver(),
+                solverFromParams(PARAMS),
                 startPose,
                 telemetry,
                 System::nanoTime);
+    }
+
+    /**
+     * Builds a {@link VisionPoseSolver} from this robot's {@link Params} camera extrinsics and this
+     * quickstart's {@link FieldTagMap}.
+     */
+    public static VisionPoseSolver solverFromParams(Params p) {
+        Transform3D robotFromCamera =
+                VisionPoseSolverConfig.robotFromCameraFromLimelightRs(
+                        p.cameraForwardM,
+                        p.cameraSideM,
+                        p.cameraUpM,
+                        p.cameraRollDeg,
+                        p.cameraPitchDeg,
+                        p.cameraYawDeg);
+        return new VisionPoseSolverConfig(robotFromCamera, FieldTagMap.decode2025GoalTags())
+                .solver();
     }
 
     public HypothesisBankRoadRunnerLocalizer(
