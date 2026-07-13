@@ -246,7 +246,7 @@ if [[ $goto_summary -eq 0 ]]; then
           -)
             echo "      [FAIL] $path -- not initialized"
             echo "             Run: git submodule update --init --recursive"
-            echo "             Or run: ./update-MarsCommonFtc.sh"
+            echo "             Or run: ./update-submodules.sh"
             ERRORS=$((ERRORS+1))
             ;;
         +)
@@ -274,7 +274,7 @@ if [[ $goto_summary -eq 0 ]]; then
     if [[ $SUB_COUNT -eq 0 ]]; then
       echo "      [WARN] No submodule status returned -- submodules may not be initialized"
       echo "             Run: git submodule update --init --recursive"
-      echo "             Or run: ./update-MarsCommonFtc.sh"
+      echo "             Or run: ./update-submodules.sh"
       WARNINGS=$((WARNINGS+1))
     fi
     # Detect staged-but-uncommitted submodule pointer changes in the parent repo.
