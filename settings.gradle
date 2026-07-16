@@ -12,6 +12,9 @@ project(':ControlLib').projectDir = file('MarsCommonFtc/ControlLib')
 include ':ControlLab'
 project(':ControlLab').projectDir = file('MarsCommonFtc/ControlLab')
 
+include ':RuckigJava'
+project(':RuckigJava').projectDir = file('MarsCommonFtc/RuckigJava')
+
 // --- Road Runner modules ---
 includeBuild('libs/road-runner/road-runner') {
     dependencySubstitution {
