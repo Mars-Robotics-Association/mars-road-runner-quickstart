@@ -31,12 +31,21 @@ import java.util.List;
  * by logging encoder position (not hub velocity) and regressing on integrated intervals so
  * acceleration is never differentiated from noisy velocity.
  *
- * <p><b>Two-stage fit.</b> Constant-velocity <b>holds</b> (Y / right bumper) pin {@code kS} and
- * gravity quasi-statically — at a held speed α ≈ 0, so a lashy/flexy drivetrain cannot inflate
- * {@code kS} (the direction-flipping flex/lash deflection would otherwise land in the {@code sign(ω)}
- * term). Constant-voltage <b>runs</b> (A / X) excite {@code Δω} and pin {@code kV} and {@code kA}.
- * {@link ArmSysId#solveTwoStage} combines them. An over-estimated {@code kS} is an anti-braking
- * feedforward term that brings back arrival overshoot, so the holds matter on a real arm.
+ * <p><b>Two-stage fit.</b> Constant-velocity <b>holds</b> (Y / right bumper) pin {@code kS},
+ * {@code kV}, and gravity quasi-statically — at a held speed α ≈ 0, so a lashy/flexy drivetrain
+ * cannot inflate {@code kS} (the direction-flipping flex/lash deflection would otherwise land in
+ * the {@code sign(ω)} term), and the fit's direction-split gravity columns absorb the ±half-lash
+ * encoder offset (reported back as a backlash estimate). Constant-voltage <b>runs</b> (A / X)
+ * excite {@code Δω} and pin {@code kA}; run at several speeds in both directions so the hold-side
+ * {@code kV} is trusted. {@link ArmSysId#solveTwoStage} combines them and cross-checks the
+ * hold-side {@code kV} against the run-side one — disagreement flags flex contamination. An
+ * over-estimated {@code kS} is an anti-braking feedforward term that brings back arrival
+ * overshoot, so the holds matter on a real arm.
+ *
+ * <p><b>Flex-aware runs.</b> If the arm visibly rings, capture a ring-down (<b>left bumper</b>:
+ * power drops, flick the arm, hold still) or set {@link Params#FLEX_HZ}; the fit then spans its
+ * run intervals over whole flex periods so the ring cancels out of {@code kA}. Raw logs are kept
+ * and accumulated at solve time, so a ring-down captured after some runs still benefits them.
  *
  * <p>Each control loop reads the hub battery voltage and commands
  * {@code power = clamp(V_cmd / V_batt)} so the applied voltage tracks the requested volts under
@@ -52,11 +61,14 @@ import java.util.List;
  * <ol>
  *   <li>Set range, motor name, and {@code TICKS_PER_ARM_REV} on Dashboard (or in code).</li>
  *   <li>Press Start. Idle loop shows θ vs the configured range and live battery voltage.</li>
- *   <li><b>Holds (kS, gravity):</b> park the arm near one hard stop, then press <b>Y</b> (sweep up)
- *       or <b>right bumper</b> (sweep down) to hold {@code HOLD_SPEED} across the range. Collect a
- *       few speeds in both directions (change {@code HOLD_SPEED} between holds).</li>
- *   <li><b>Runs (kV, kA):</b> press <b>A</b> for a +voltage run, <b>X</b> for a −voltage run;
+ *   <li><b>Holds (kS, kV, gravity, backlash):</b> park the arm near one hard stop, then press
+ *       <b>Y</b> (sweep up) or <b>right bumper</b> (sweep down) to hold {@code HOLD_SPEED} across
+ *       the range. Collect a few speeds in both directions (change {@code HOLD_SPEED} between
+ *       holds) — the speed spread is what lets the holds pin {@code kV}.</li>
+ *   <li><b>Runs (kA):</b> press <b>A</b> for a +voltage run, <b>X</b> for a −voltage run;
  *       change {@code RUN_VOLTAGE} between runs. Near-horizontal starts help.</li>
+ *   <li><b>Flex (optional):</b> press <b>left bumper</b>, flick the arm, and let it ring to
+ *       measure the flex period (or set {@code FLEX_HZ}).</li>
  *   <li>Press <b>B</b> to solve (two-stage) and show results until stop.</li>
  * </ol>
  *
@@ -115,6 +127,14 @@ public class ArmSysIdTuning extends LinearOpMode {
         public double HOLD_KI = 20.0;
         /** Max duration of a single hold sweep (seconds) before it gives up. */
         public double HOLD_MAX_S = 5.0;
+        /**
+         * Structural-flex frequency (Hz) if known; 0 = none. A left-bumper ring-down capture
+         * overrides this. When set, run intervals span whole flex periods so the ring cancels out
+         * of the kA fit.
+         */
+        public double FLEX_HZ = 0.0;
+        /** Duration of a left-bumper ring-down capture (seconds). */
+        public double RINGDOWN_S = 2.5;
     }
 
     public static Params PARAMS = new Params();
@@ -124,15 +144,16 @@ public class ArmSysIdTuning extends LinearOpMode {
     private LynxModule hub;
     private double ticksToRad;
 
-    // Stage 2 data (kV, kA): constant-voltage A/X runs.
-    private final List<double[]> movingRows = new ArrayList<>();
-    private final List<Double> movingRhs = new ArrayList<>();
-    // Stage 1 data (kS, gravity): constant-velocity Y / right-bumper holds.
-    private final List<double[]> holdRows = new ArrayList<>();
-    private final List<Double> holdRhs = new ArrayList<>();
+    // Raw logs ({theta, volts, time} per capture), accumulated into fit rows at solve time so a
+    // flex period learned late (ring-down or Dashboard edit) still applies to every run.
+    private final List<double[][]> runLogs = new ArrayList<>();   // stage 2 (kA): A/X runs
+    private final List<double[][]> holdLogs = new ArrayList<>();  // stage 1: Y/RB holds
+    private double flexPeriodMeasured = 0.0; // seconds; from a left-bumper ring-down capture
     private int runsCompleted = 0;
     private int holdsCompleted = 0;
     private int totalSamples = 0;
+    private int holdRowCount = 0;   // set at solve time
+    private int movingRowCount = 0;
 
     @Override
     public void runOpMode() throws InterruptedException {
@@ -147,9 +168,10 @@ public class ArmSysIdTuning extends LinearOpMode {
         bulkReads = new BulkReads(hardwareMap);
         ticksToRad = 2.0 * Math.PI / PARAMS.TICKS_PER_ARM_REV;
 
-        telemetry.addLine("ArmSysId — two-stage (holds for kS/gravity, runs for kV/kA)");
+        telemetry.addLine("ArmSysId — two-stage (holds for kS/kV/gravity, runs for kA)");
         telemetry.addLine("Set MIN/MAX_ANGLE_DEG to your hard stops (Dashboard).");
-        telemetry.addLine("A = +V run, X = −V run, Y = +speed hold, RB = −speed hold, B = solve.");
+        telemetry.addLine("A = +V run, X = −V run, Y = +speed hold, RB = −speed hold,");
+        telemetry.addLine("LB = flex ring-down (flick the arm), B = solve.");
         addRangeTelemetry();
         telemetry.update();
         waitForStart();
@@ -164,16 +186,18 @@ public class ArmSysIdTuning extends LinearOpMode {
 
             double battV = hub.getInputVoltage(VoltageUnit.VOLTS);
             telemetry.addLine("── collect ──");
-            telemetry.addData("A / X", "±%.1f V run (kV, kA)", PARAMS.RUN_VOLTAGE);
-            telemetry.addData("Y / RB", "±%.1f rad/s hold (kS, gravity)", PARAMS.HOLD_SPEED);
+            telemetry.addData("A / X", "±%.1f V run (kA)", PARAMS.RUN_VOLTAGE);
+            telemetry.addData("Y / RB", "±%.1f rad/s hold (kS, kV, gravity)", PARAMS.HOLD_SPEED);
+            telemetry.addData("LB", "flex ring-down (%.1f s; flick the arm first)",
+                    PARAMS.RINGDOWN_S);
             telemetry.addData("B", "solve (two-stage)");
             addRangeTelemetry();
             telemetry.addData("V_batt (live)", "%.2f V", battV);
             telemetry.addData("RUN_VOLTAGE / HOLD_SPEED", "%.2f V / %.2f rad/s",
                     PARAMS.RUN_VOLTAGE, PARAMS.HOLD_SPEED);
-            telemetry.addData("runs / moving rows", "%d / %d", runsCompleted, movingRows.size());
-            telemetry.addData("holds / hold rows", "%d / %d", holdsCompleted, holdRows.size());
+            telemetry.addData("runs / holds", "%d / %d", runsCompleted, holdsCompleted);
             telemetry.addData("raw samples", totalSamples);
+            telemetry.addData("flex period", flexPeriodTelemetry());
             telemetry.update();
 
             if (gamepad1.aWasPressed()) {
@@ -192,6 +216,10 @@ public class ArmSysIdTuning extends LinearOpMode {
                 if (!runVelocityHold(-PARAMS.HOLD_SPEED, "−hold")) {
                     return;
                 }
+            } else if (gamepad1.leftBumperWasPressed()) {
+                if (!captureRingDown()) {
+                    return;
+                }
             } else if (gamepad1.bWasPressed()) {
                 break;
             }
@@ -202,9 +230,49 @@ public class ArmSysIdTuning extends LinearOpMode {
             return;
         }
 
-        ArmSysId.Result r =
-                ArmSysId.solveTwoStage(holdRows, holdRhs, movingRows, movingRhs);
-        showResults(r);
+        showResults(solveFromLogs());
+    }
+
+    /**
+     * Accumulate every stored log with the final fit parameters (including any flex period learned
+     * along the way), then run the two-stage solve.
+     */
+    private ArmSysId.Result solveFromLogs() {
+        ArmSysId.FitParams fit = new ArmSysId.FitParams();
+        fit.flexPeriodSec = flexPeriodSec();
+
+        List<double[]> movingRows = new ArrayList<>();
+        List<Double> movingRhs = new ArrayList<>();
+        for (double[][] log : runLogs) {
+            ArmSysId.accumulateRun(log[0], log[1], log[2],
+                    minAngleRad(), maxAngleRad(), fit, movingRows, movingRhs);
+        }
+        List<double[]> holdRows = new ArrayList<>();
+        List<Double> holdRhs = new ArrayList<>();
+        for (double[][] log : holdLogs) {
+            ArmSysId.accumulateHold(log[0], log[1], log[2],
+                    minAngleRad(), maxAngleRad(), fit, holdRows, holdRhs);
+        }
+        holdRowCount = holdRows.size();
+        movingRowCount = movingRows.size();
+        return ArmSysId.solveTwoStage(fit, holdRows, holdRhs, movingRows, movingRhs);
+    }
+
+    /** The flex period to fit with: a ring-down measurement wins over the configured FLEX_HZ. */
+    private double flexPeriodSec() {
+        if (flexPeriodMeasured > 0) {
+            return flexPeriodMeasured;
+        }
+        return PARAMS.FLEX_HZ > 0 ? 1.0 / PARAMS.FLEX_HZ : 0.0;
+    }
+
+    private String flexPeriodTelemetry() {
+        double period = flexPeriodSec();
+        if (period <= 0) {
+            return "none (LB to measure, or set FLEX_HZ)";
+        }
+        return String.format("%.3f s (%.1f Hz, %s)", period, 1.0 / period,
+                flexPeriodMeasured > 0 ? "measured" : "FLEX_HZ");
     }
 
     /**
@@ -261,7 +329,7 @@ public class ArmSysIdTuning extends LinearOpMode {
             telemetry.addData("V applied", "%.2f V", vApplied);
             addRangeTelemetry();
             telemetry.addData("samples this run", thetaList.size());
-            telemetry.addData("moving rows so far", movingRows.size());
+            telemetry.addData("runs so far", runsCompleted);
             telemetry.update();
         }
 
@@ -277,33 +345,13 @@ public class ArmSysIdTuning extends LinearOpMode {
             return true;
         }
 
-        double[] theta = new double[n];
-        double[] voltage = new double[n];
-        double[] timeSec = new double[n];
-        for (int i = 0; i < n; i++) {
-            theta[i] = thetaList.get(i);
-            voltage[i] = voltList.get(i);
-            timeSec[i] = timeList.get(i);
-        }
-
-        int before = movingRows.size();
-        ArmSysId.accumulateRun(
-                theta,
-                voltage,
-                timeSec,
-                minAngleRad(),
-                maxAngleRad(),
-                ArmSysId.DEFAULT_PARAMS,
-                movingRows,
-                movingRhs);
+        runLogs.add(toLog(thetaList, voltList, timeList));
         totalSamples += n;
         runsCompleted++;
 
-        double meanDtMs = n >= 2
-                ? 1000.0 * (timeSec[n - 1] - timeSec[0]) / (n - 1)
-                : 0.0;
-        telemetry.addData("Run", "%s done: %d samples mean dt=%.1f ms → +%d moving rows",
-                label, n, meanDtMs, movingRows.size() - before);
+        double meanDtMs = 1000.0 * (timeList.get(n - 1) - timeList.get(0)) / (n - 1);
+        telemetry.addData("Run", "%s done: %d samples mean dt=%.1f ms (rows built at solve)",
+                label, n, meanDtMs);
         telemetry.update();
         return true;
     }
@@ -366,7 +414,7 @@ public class ArmSysIdTuning extends LinearOpMode {
             telemetry.addData("V applied", "%.2f V", vApplied);
             addRangeTelemetry();
             telemetry.addData("samples this hold", thetaList.size());
-            telemetry.addData("hold rows so far", holdRows.size());
+            telemetry.addData("holds so far", holdsCompleted);
             telemetry.update();
         }
 
@@ -383,32 +431,72 @@ public class ArmSysIdTuning extends LinearOpMode {
             return true;
         }
 
-        double[] theta = new double[n];
-        double[] voltage = new double[n];
-        double[] timeSec = new double[n];
-        for (int i = 0; i < n; i++) {
-            theta[i] = thetaList.get(i);
-            voltage[i] = voltList.get(i);
-            timeSec[i] = timeList.get(i);
-        }
-
-        int before = holdRows.size();
-        ArmSysId.accumulateHold(
-                theta,
-                voltage,
-                timeSec,
-                minAngleRad(),
-                maxAngleRad(),
-                ArmSysId.DEFAULT_PARAMS,
-                holdRows,
-                holdRhs);
+        holdLogs.add(toLog(thetaList, voltList, timeList));
         totalSamples += n;
         holdsCompleted++;
 
-        telemetry.addData("Hold", "%s done: %d samples → +%d hold rows (steady)",
-                label, n, holdRows.size() - before);
+        telemetry.addData("Hold", "%s done: %d samples (rows built at solve)", label, n);
         telemetry.update();
         return true;
+    }
+
+    /**
+     * Ring-down capture for the flex period: power drops to float, the driver flicks the arm, and
+     * the free oscillation is logged for {@link Params#RINGDOWN_S}.
+     * {@link ArmSysId#estimateFlexPeriod} turns the log into a period for the solve-time fit.
+     *
+     * @return false if the OpMode stopped
+     */
+    private boolean captureRingDown() {
+        List<Double> thetaList = new ArrayList<>();
+        List<Double> timeList = new ArrayList<>();
+        ElapsedTime run = new ElapsedTime();
+        // Float, not brake: a shorted motor damps the very oscillation being measured.
+        motor.setZeroPowerBehavior(DcMotorEx.ZeroPowerBehavior.FLOAT);
+        motor.setPower(0);
+        run.reset();
+
+        while (opModeIsActive() && run.seconds() < PARAMS.RINGDOWN_S) {
+            bulkReads.readAll();
+            thetaList.add(readThetaRad());
+            timeList.add(run.seconds());
+            telemetry.addData("Ring-down", "flick the arm, hold the base still");
+            telemetry.addData("t", "%.2f / %.2f s", run.seconds(), PARAMS.RINGDOWN_S);
+            telemetry.update();
+        }
+        motor.setZeroPowerBehavior(DcMotorEx.ZeroPowerBehavior.BRAKE);
+        if (!opModeIsActive()) {
+            return false;
+        }
+
+        int n = thetaList.size();
+        double[] theta = new double[n];
+        double[] timeSec = new double[n];
+        for (int i = 0; i < n; i++) {
+            theta[i] = thetaList.get(i);
+            timeSec[i] = timeList.get(i);
+        }
+        double period = ArmSysId.estimateFlexPeriod(theta, timeSec);
+        if (period > 0) {
+            flexPeriodMeasured = period;
+            telemetry.addData("Ring-down", "flex period %.3f s (%.1f Hz)", period, 1.0 / period);
+        } else {
+            telemetry.addData("Ring-down", "no clear oscillation — flick harder or set FLEX_HZ");
+        }
+        telemetry.update();
+        return true;
+    }
+
+    /** Pack parallel sample lists into a {@code {theta, volts, time}} log. */
+    private static double[][] toLog(List<Double> theta, List<Double> volts, List<Double> time) {
+        int n = theta.size();
+        double[][] log = new double[3][n];
+        for (int i = 0; i < n; i++) {
+            log[0][i] = theta.get(i);
+            log[1][i] = volts.get(i);
+            log[2][i] = time.get(i);
+        }
+        return log;
     }
 
     private void showResults(ArmSysId.Result r) {
@@ -419,7 +507,7 @@ public class ArmSysIdTuning extends LinearOpMode {
             telemetry.addLine("── ArmSysId RESULTS (two-stage) ──");
             if (r.samples < 5) {
                 telemetry.addData("Fit", "FAILED – only %d rows (need ≥ 5). Add Y/RB holds "
-                        + "(kS, gravity) and A/X runs (kV, kA) at several speeds and angles.",
+                        + "(kS, kV, gravity) and A/X runs (kA) at several speeds and angles.",
                         r.samples);
             } else {
                 telemetry.addData("kS", "%.4f V", r.kS);
@@ -428,9 +516,27 @@ public class ArmSysIdTuning extends LinearOpMode {
                 telemetry.addData("kCos", "%.4f V", r.kCos);
                 telemetry.addData("kSin", "%.4f V", r.kSin);
                 telemetry.addData("R²", "%.4f", r.rSquared);
-                telemetry.addData("rows (hold+moving)", "%d + %d", holdRows.size(), movingRows.size());
+                telemetry.addData("rows (hold+moving)", "%d + %d", holdRowCount, movingRowCount);
                 telemetry.addData("runs / holds / samples", "%d / %d / %d",
                         runsCompleted, holdsCompleted, totalSamples);
+                telemetry.addLine("");
+                telemetry.addLine("── cross-checks ──");
+                if (Double.isNaN(r.kVHold)) {
+                    telemetry.addData("kV (hold)", "n/a — holds lack speed spread or a direction; "
+                            + "run-side kV shipped");
+                } else {
+                    telemetry.addData("kV hold / run", "%.4f / %.4f  (hold ships)",
+                            r.kVHold, r.kVRun);
+                    if (r.kVDisagreement() > 0.10) {
+                        telemetry.addLine("WARNING: hold/run kV disagree >10% — moving runs look "
+                                + "flex/lash contaminated; trust the hold-side value.");
+                    }
+                }
+                if (!Double.isNaN(r.halfLashRad)) {
+                    telemetry.addData("backlash (est.)", "%.2f° total (±%.2f° half-lash)",
+                            2 * Math.toDegrees(r.halfLashRad), Math.toDegrees(r.halfLashRad));
+                }
+                telemetry.addData("flex period", flexPeriodTelemetry());
                 telemetry.addLine("");
                 telemetry.addLine("── derived (ArmFeedforward form) ──");
                 telemetry.addData("kG", "%.4f V  (= √(kCos²+kSin²))", r.kG());
