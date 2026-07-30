@@ -5,14 +5,15 @@ sysid OpModes that drive a maneuver, fit the constants, and print values to past
 `Params`. This is the recommended flow; the [stock manual procedure](https://rr.brott.dev/docs/v1-0/tuning/)
 remains available and is a useful fallback when an automatic fit looks suspect.
 
-All tuners are registered under the `quickstart` OpMode group. Steps marked **manual**
-can't be automated (they measure physical geometry or require human observation).
+Most drive tuners are registered under the `quickstart` OpMode group;
+`Pinpoint Offset Tuner` is under `Tuning`. Steps marked **manual** can't be
+automated (they measure physical geometry or require human observation).
 
 | # | Step | OpMode | Sets | Mode |
 |---|------|--------|------|------|
 | 1 | Motor directions | `MecanumMotorDirectionDebugger` / `DeadWheelDirectionDebugger` | motor/encoder directions | manual |
 | 2 | Linear scale | `ForwardPushTest` (+ `LateralPushTest` for mecanum dead wheels) | `inPerTick`, `lateralInPerTick` | manual push |
-| 3 | Angular scale / wheel geometry | `AngularRampLogger` (or the OTOS/Pinpoint tuners) | `trackWidthTicks`, dead-wheel positions | semi-auto |
+| 3 | Angular scale / wheel geometry | `AngularRampLogger` (dead wheels); **`Pinpoint Offset Tuner`** (Pinpoint pods); OTOS tuners | `trackWidthTicks`, dead-wheel / Pinpoint offsets | semi-auto |
 | 4 | Drive feedforward | **`AxialFeedforwardTuner`** | `kS`, `kV`, `kA` | **automatic** |
 | 5 | Track width correction | **`TrackWidthTuner`** | `trackWidthTicks` | **automatic** |
 | 6 | Strafe feedforward (mecanum) | **`LateralFeedforwardTuner`** | `lateralKS/KV/KA`, enable `useAnisotropicFeedforward` | **automatic** |
@@ -54,7 +55,9 @@ With a Pinpoint or OTOS it plays no part in localization at all:
 
 - **Pinpoint** computes heading onboard from its own pods. What it needs is the pod
   resolution (`inPerTick`) and the pod offsets — `PinpointLocalizer.PARAMS.parYTicks` /
-  `perpXTicks`, which `AngularRampLogger` measures.
+  `perpXTicks`. Measure those with **`Pinpoint Offset Tuner`** (step 3; see
+  [below](#pinpoint-pod-offsets-pinpoint-offset-tuner)); do not expect
+  `AngularRampLogger` to produce them on a Pinpoint setup.
 - **OTOS** is self-contained; its scalars and mounting offset come from the four
   `OTOS*Tuner` OpModes.
 
@@ -82,6 +85,78 @@ In practice that makes it a **get-within-~10%-and-move-on** parameter:
 3. Residual error is absorbed automatically: `FeedbackGainTuner` tunes the heading loop
    against the plant as it actually responds, so a few percent of track-width error just
    shifts the heading gains it lands on.
+
+---
+
+## Pinpoint pod offsets (`Pinpoint Offset Tuner`)
+
+**Problem it solves.** The Pinpoint needs the mounting position of each odometry pod
+relative to the robot center: the parallel pod's $y$ offset (`parYTicks`) and the
+perpendicular pod's $x$ offset (`perpXTicks`). Wrong offsets make the reported pose
+orbit in circles on the Dashboard field view whenever the robot spins in place, even
+though the chassis is not translating.
+
+Tape-measure first guesses are fine to start, but small errors still show up as that
+circular drift. `Pinpoint Offset Tuner` (OpMode group `Tuning`) turns the spin into a
+measurement: it watches how far the pose drifts after each half-revolution and prints
+corrected offsets in inches.
+
+### How it works
+
+While the robot spins about a fixed point, an offset error looks like a constant
+position bias that rotates with heading. After a half-revolution ($\pi$ rad) the bias
+has flipped sign, so the field displacement between start and sample is twice the
+offset error (with a sign that depends on which axis is wrong). The tuner:
+
+1. Ignores translation commands and only accepts yaw from the right stick, so the
+   chassis stays put while heading accumulates.
+2. Unwraps heading and samples the reported field pose each time total rotation
+   crosses an odd multiple of $\pi$ (every $180^\circ$).
+3. Averages those displacements over several half-revolutions to reject noise.
+4. Converts average field displacement $(d_x, d_y)$ into offset corrections:
+
+$$
+e_x = \frac{d_x}{2},\qquad e_y = \frac{d_y}{2}
+$$
+
+$$
+x' = x - e_x,\qquad y' = y - e_y
+$$
+
+where $x$ / $y$ are the currently configured perpendicular / parallel offsets in
+inches, $e_x$ / $e_y$ are the estimated errors, and $x'$ / $y'$ are the corrected
+values printed on telemetry.
+
+### Procedure
+
+1. Finish motor/encoder directions and linear scale first (steps 1–2). `inPerTick`
+   must be set — the tuner reports inches and you convert to ticks with it.
+2. Put a starting guess in `PinpointLocalizer.PARAMS` if you have one (tape measure is
+   fine; zeros also work and just take more correction on the first pass).
+3. Clear space to spin in place. Run **Pinpoint Offset Tuner**.
+4. Spin consistently in **one** direction with the right stick for several full
+   revolutions. Left stick is ignored on purpose.
+5. Read the corrected **perpX** and **parY** inches from telemetry (`>>>` lines).
+6. Paste into `PinpointLocalizer.Params` as ticks:
+
+   ```
+   parYTicks  = parY_inches  / inPerTick
+   perpXTicks = perpX_inches / inPerTick
+   ```
+
+7. Re-run. The pose trail on Dashboard should stay near the green origin marker
+   instead of tracing a circle. Iterate once more if residual drift remains.
+
+### If it fails
+
+- **Pose still orbits after pasting** — confirm you converted inches → ticks with the
+  same `inPerTick` the drive uses, and that encoder directions are correct before
+  blaming the offsets.
+- **No samples appear** — keep spinning the same way until total rotation exceeds
+  $180^\circ$; samples only fire on odd half-revolutions.
+- **Displacements huge / unstable** — the robot is translating while turning (floor
+  grip, or you nudged with the left stick). Re-center and spin cleaner; average more
+  revolutions.
 
 ---
 
