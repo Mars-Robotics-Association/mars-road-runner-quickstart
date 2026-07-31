@@ -38,10 +38,10 @@ import java.util.function.Consumer;
  * reports {@code trackWidthTicks / slope} as the corrected value.
  *
  * <p>Prerequisites: the drive feedforward ({@code kS}/{@code kV}, ideally {@code kA}) must be
- * tuned — the spin is driven open-loop through it — and {@code trackWidthTicks} must hold a
- * rough initial estimate (tape-measure track width divided by {@code inPerTick}); the tuner
- * corrects it multiplicatively. After pasting the corrected value, re-run to verify: the slope
- * should come out ≈ 1.00.
+ * tuned — the spin is driven open-loop through it. {@code trackWidthTicks} may be left at 0; the
+ * tuner then seeds a nominal geometric track width ({@link #DEFAULT_TRACK_WIDTH_IN} / {@code
+ * inPerTick}) so the multiplicative fit can run. A tape-measure value is still fine if you have
+ * one. After pasting the corrected value, re-run to verify: the slope should come out ≈ 1.00.
  */
 @Config
 public final class TrackWidthTuner extends LinearOpMode {
@@ -51,6 +51,13 @@ public final class TrackWidthTuner extends LinearOpMode {
     public static double RAMP_TIME = 3.0;
     /** Samples with commanded angular velocity below this (rad/s) are ignored as start-up transient. */
     public static double MIN_ANG_VEL = 0.5;
+    /**
+     * Nominal geometric track width in inches used when {@code Params.trackWidthTicks} is unset
+     * ({@code <= 0}). Converted to ticks via {@code / inPerTick}. The robot size limit is 18 in;
+     * 16 in leaves margin under that for a typical wheel-center track. Mecanum effective width
+     * often comes out somewhat larger after correction because of roller scrub.
+     */
+    public static double DEFAULT_TRACK_WIDTH_IN = 16.0;
 
     @Override
     public void runOpMode() throws InterruptedException {
@@ -59,26 +66,40 @@ public final class TrackWidthTuner extends LinearOpMode {
         Consumer<PoseVelocity2dDual<Time>> setCommand;
         IMU imu;
         double trackWidthTicks;
+        boolean usedDefaultSeed;
         String paramsClass;
         if (TuningOpModes.DRIVE_CLASS.equals(MecanumDrive.class)) {
+            requireFeedforward(MecanumDrive.PARAMS.kV);
+            usedDefaultSeed = MecanumDrive.PARAMS.trackWidthTicks <= 0;
+            // Kinematics bake trackWidthTicks at construction — seed Params first when unset.
+            trackWidthTicks = resolveTrackWidthTicks(
+                    MecanumDrive.PARAMS.trackWidthTicks, MecanumDrive.PARAMS.inPerTick);
+            MecanumDrive.PARAMS.trackWidthTicks = trackWidthTicks;
             MecanumDrive drive = new MecanumDrive(hardwareMap, new Pose2d(0, 0, 0));
-            requireCalibrated(MecanumDrive.PARAMS.kV, MecanumDrive.PARAMS.trackWidthTicks);
             setCommand = drive::setDriveCommand;
             imu = drive.lazyImu.get();
-            trackWidthTicks = MecanumDrive.PARAMS.trackWidthTicks;
             paramsClass = "MecanumDrive.Params";
         } else if (TuningOpModes.DRIVE_CLASS.equals(TankDrive.class)) {
+            requireFeedforward(TankDrive.PARAMS.kV);
+            usedDefaultSeed = TankDrive.PARAMS.trackWidthTicks <= 0;
+            trackWidthTicks = resolveTrackWidthTicks(
+                    TankDrive.PARAMS.trackWidthTicks, TankDrive.PARAMS.inPerTick);
+            TankDrive.PARAMS.trackWidthTicks = trackWidthTicks;
             TankDrive drive = new TankDrive(hardwareMap, new Pose2d(0, 0, 0));
-            requireCalibrated(TankDrive.PARAMS.kV, TankDrive.PARAMS.trackWidthTicks);
             setCommand = drive::setDriveCommand;
             imu = drive.lazyImu.get();
-            trackWidthTicks = TankDrive.PARAMS.trackWidthTicks;
             paramsClass = "TankDrive.Params";
         } else {
             throw new RuntimeException("Unknown DRIVE_CLASS");
         }
 
         telemetry.addLine("Track width tuner.");
+        if (usedDefaultSeed) {
+            telemetry.addData("seed", "default %.1f in → trackWidthTicks=%.2f",
+                    DEFAULT_TRACK_WIDTH_IN, trackWidthTicks);
+        } else {
+            telemetry.addData("seed", "Params trackWidthTicks=%.2f", trackWidthTicks);
+        }
         telemetry.addLine("Press START, then the robot spins in place: counterclockwise, then clockwise.");
         telemetry.addLine("Make sure it can rotate freely.");
         telemetry.update();
@@ -102,29 +123,43 @@ public final class TrackWidthTuner extends LinearOpMode {
                 telemetry.addLine("=== Paste into " + paramsClass + " ===");
                 telemetry.addData("trackWidthTicks", "%.2f", corrected);
                 telemetry.addLine();
+                telemetry.addData("seed used", "%.2f%s", trackWidthTicks,
+                        usedDefaultSeed ? " (default geometric)" : "");
                 telemetry.addData("slope (actual/commanded)", "%.4f", slope);
                 telemetry.addData("ccw fit", "slope %.4f, R^2 %.4f (%d/%d pts)", ccw.slope, ccw.r2, ccw.used, ccw.total);
                 telemetry.addData("cw fit", "slope %.4f, R^2 %.4f (%d/%d pts)", cw.slope, cw.r2, cw.used, cw.total);
                 telemetry.addLine("Re-run after pasting: the slope should be ~1.00.");
             } else {
                 telemetry.addLine("FAILED: fitted slope " + String.format("%.3f", slope) + " is not plausible.");
-                telemetry.addLine("Check motor directions, feedforward (kS/kV), and the initial");
-                telemetry.addLine("trackWidthTicks estimate, then retry.");
+                telemetry.addLine("Check motor directions and feedforward (kS/kV), then retry.");
+                telemetry.addData("seed used", "%.2f%s", trackWidthTicks,
+                        usedDefaultSeed ? " (default geometric)" : "");
             }
             telemetry.update();
         }
     }
 
-    private static void requireCalibrated(double kV, double trackWidthTicks) {
+    private static void requireFeedforward(double kV) {
         if (kV <= 0) {
             throw new RuntimeException(
                     "Tune the drive feedforward (kS/kV) before running TrackWidthTuner — the spin is driven through it.");
         }
-        if (trackWidthTicks <= 0) {
-            throw new RuntimeException(
-                    "Set an initial trackWidthTicks estimate first (tape-measure track width / inPerTick)."
-                            + " TrackWidthTuner corrects it multiplicatively and can't start from 0.");
+    }
+
+    /**
+     * Returns the seed for the multiplicative fit: the existing Params value when set, otherwise
+     * {@link #DEFAULT_TRACK_WIDTH_IN} / {@code inPerTick}.
+     */
+    private static double resolveTrackWidthTicks(double trackWidthTicks, double inPerTick) {
+        if (trackWidthTicks > 0) {
+            return trackWidthTicks;
         }
+        if (inPerTick <= 0) {
+            throw new RuntimeException(
+                    "Set inPerTick (ForwardPushTest) before TrackWidthTuner — needed to seed trackWidthTicks from "
+                            + DEFAULT_TRACK_WIDTH_IN + " in.");
+        }
+        return DEFAULT_TRACK_WIDTH_IN / inPerTick;
     }
 
     /**
