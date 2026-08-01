@@ -34,7 +34,8 @@ import java.util.List;
  *
  * <p>Prerequisites: localization and the drive feedforward ({@code kS}/{@code kV}/{@code kA}) must
  * already be tuned. Give the robot a clear straight lane of roughly 5–6 ft in each direction it will
- * ramp (forward, and sideways on mecanum).
+ * ramp (forward, and sideways on mecanum). Press gamepad1 A during a ramp to cut power early (e.g.
+ * before a wall); the fit uses whatever samples were collected.
  */
 @Config
 public final class YawCouplingTuner extends LinearOpMode {
@@ -58,6 +59,7 @@ public final class YawCouplingTuner extends LinearOpMode {
             IMU imu = drive.lazyImu.get();
             telemetry.addLine("Mecanum yaw-coupling tuner.");
             telemetry.addLine("Press START, then the robot ramps FORWARD, stops, then ramps SIDEWAYS.");
+            telemetry.addLine("Press gamepad1 A during a ramp to stop early (e.g. before a wall).");
             telemetry.addLine("Make sure both lanes are clear.");
             telemetry.update();
             waitForStart();
@@ -98,6 +100,7 @@ public final class YawCouplingTuner extends LinearOpMode {
             IMU imu = drive.lazyImu.get();
             telemetry.addLine("Tank yaw-coupling tuner.");
             telemetry.addLine("Press START, then the robot ramps FORWARD. Make sure the lane is clear.");
+            telemetry.addLine("Press gamepad1 A during the ramp to stop early (e.g. before a wall).");
             telemetry.update();
             waitForStart();
             if (isStopRequested()) return;
@@ -132,12 +135,19 @@ public final class YawCouplingTuner extends LinearOpMode {
 
     /**
      * Ramps the mecanum drive open-loop (forward or sideways) and returns (velocity, yawRate) samples.
+     * Press gamepad1 A to end the ramp early; edge-detect so a held A from before START does not fire.
      */
     private List<double[]> rampAndSample(
             MecanumDrive drive, IMU imu, boolean forward, MultipleTelemetry telemetry, String label) {
         List<double[]> samples = new ArrayList<>();
         ElapsedTime timer = new ElapsedTime();
+        boolean stoppedByDriver = false;
         while (opModeIsActive() && timer.seconds() < RAMP_TIME) {
+            if (gamepad1.aWasPressed()) {
+                stoppedByDriver = true;
+                break;
+            }
+
             double power = MAX_POWER * timer.seconds() / RAMP_TIME;
             if (forward) {
                 setMecanumPowers(drive, power, power, power, power);
@@ -157,6 +167,7 @@ public final class YawCouplingTuner extends LinearOpMode {
             telemetry.addData("speed (in/s)", "%.1f", v);
             telemetry.addData("yaw rate (rad/s)", "%.3f", omega);
             telemetry.addData("samples", samples.size());
+            telemetry.addLine("A = stop ramp early");
             telemetry.update();
         }
         setMecanumPowers(drive, 0, 0, 0, 0);
@@ -164,6 +175,8 @@ public final class YawCouplingTuner extends LinearOpMode {
         ElapsedTime settle = new ElapsedTime();
         while (opModeIsActive() && settle.seconds() < 1.0) {
             drive.localizer.update();
+            telemetry.addData("phase", stoppedByDriver ? label + " (A stop) settling" : label + " settling");
+            telemetry.update();
         }
         return samples;
     }
@@ -172,6 +185,10 @@ public final class YawCouplingTuner extends LinearOpMode {
         List<double[]> samples = new ArrayList<>();
         ElapsedTime timer = new ElapsedTime();
         while (opModeIsActive() && timer.seconds() < RAMP_TIME) {
+            if (gamepad1.aWasPressed()) {
+                break;
+            }
+
             double power = MAX_POWER * timer.seconds() / RAMP_TIME;
             for (DcMotorEx m : drive.leftMotors) m.setPower(power);
             for (DcMotorEx m : drive.rightMotors) m.setPower(power);
@@ -187,6 +204,7 @@ public final class YawCouplingTuner extends LinearOpMode {
             telemetry.addData("speed (in/s)", "%.1f", v);
             telemetry.addData("yaw rate (rad/s)", "%.3f", omega);
             telemetry.addData("samples", samples.size());
+            telemetry.addLine("A = stop ramp early");
             telemetry.update();
         }
         for (DcMotorEx m : drive.leftMotors) m.setPower(0);
