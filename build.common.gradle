@@ -17,8 +17,6 @@
 
 import java.util.regex.Pattern
 
-apply plugin: 'com.android.application'
-
 android {
 
     compileSdkVersion 30
@@ -102,6 +100,7 @@ android {
     }
 
     compileOptions {
+        // Local: Java 17 for Road Runner / Mars modules (stock FTC ships VERSION_1_8 for OnBotJava parity).
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
     }
@@ -114,4 +113,3 @@ android {
 
 repositories {
 }
-
