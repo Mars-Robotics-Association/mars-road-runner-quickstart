@@ -45,7 +45,6 @@ import com.acmerobotics.roadrunner.ftc.RawEncoder;
 import com.qualcomm.hardware.lynx.LynxModule;
 import com.qualcomm.hardware.rev.RevHubOrientationOnRobot;
 import com.qualcomm.robotcore.hardware.DcMotor;
-import com.qualcomm.robotcore.hardware.DcMotorSimple;
 import com.qualcomm.robotcore.hardware.DcMotorEx;
 import com.qualcomm.robotcore.hardware.HardwareMap;
 import com.qualcomm.robotcore.hardware.VoltageSensor;
@@ -66,13 +65,21 @@ public final class TankDrive {
     public static class Params {
         // IMU orientation
         // TODO: fill in these values based on
-        //   see https://ftc-docs.firstinspires.org/en/latest/programming_resources/imu/imu.html?highlight=imu#physical-hub-mounting
+        //   see
+        // https://ftc-docs.firstinspires.org/en/latest/programming_resources/imu/imu.html?highlight=imu#physical-hub-mounting
         public RevHubOrientationOnRobot.LogoFacingDirection logoFacingDirection =
                 RevHubOrientationOnRobot.LogoFacingDirection.UP;
         public RevHubOrientationOnRobot.UsbFacingDirection usbFacingDirection =
                 RevHubOrientationOnRobot.UsbFacingDirection.FORWARD;
 
         // drive model parameters
+        // Linear scale for the drive model (kV/kA, trackWidthTicks, kinematics).
+        // Also the odometry scale passed into Pinpoint / dead-wheel localizers.
+        // Starting values by localizer:
+        //   Pinpoint / dead wheels (goBILDA 48mm pods, 2000 ticks/rev):
+        //     (48 / 25.4 * Math.PI) / 2000.0
+        //   OTOS (reports inches natively): 1.0
+        //   Drive encoders: ForwardPushTest (or compute from wheel diameter / gearing)
         public double inPerTick = 0;
         public double trackWidthTicks = 0;
 
@@ -94,10 +101,11 @@ public final class TankDrive {
 
         // Voltage-budget path constraint (back-EMF/traction aware). When enabled, path velocity and
         // acceleration are limited by keeping every wheel's feedforward voltage within the budget
-        // instead of by the fixed maxWheelVel / profile-accel caps above. Requires calibrated kV, kA.
+        // instead of by the fixed maxWheelVel / profile-accel caps above. Requires calibrated kV,
+        // kA.
         public boolean useWheelVoltageConstraint = false;
         public double maxVoltageForPlanning = 11.0; // plan below the 12 V nominal to leave headroom
-        public double cruiseFraction = 0.95;        // budget spent cruising; remainder reserved for accel
+        public double cruiseFraction = 0.95; // budget spent cruising; remainder reserved for accel
 
         // Centripetal (cornering) acceleration limit, in in/s^2. Caps speed through curves to keep
         // the wheels from slipping sideways. Zero = disabled.
@@ -118,10 +126,11 @@ public final class TankDrive {
 
     public static Params PARAMS = new Params();
 
-    public final TankKinematics kinematics = new TankKinematics(PARAMS.inPerTick * PARAMS.trackWidthTicks);
+    public final TankKinematics kinematics =
+            new TankKinematics(PARAMS.inPerTick * PARAMS.trackWidthTicks);
 
-    public final TurnConstraints defaultTurnConstraints = new TurnConstraints(
-            PARAMS.maxAngVel, -PARAMS.maxAngAccel, PARAMS.maxAngAccel);
+    public final TurnConstraints defaultTurnConstraints =
+            new TurnConstraints(PARAMS.maxAngVel, -PARAMS.maxAngAccel, PARAMS.maxAngAccel);
     // A single WheelVoltageConstraint instance serves as both the velocity and the acceleration
     // constraint when PARAMS.useWheelVoltageConstraint is set; null otherwise. It must be declared
     // (and initialized) before the two constraint fields that reference it below.
@@ -135,11 +144,13 @@ public final class TankDrive {
                     : new ProfileAccelConstraint(PARAMS.minProfileAccel, PARAMS.maxProfileAccel);
 
     private TankKinematics.WheelVoltageConstraint makeWheelVoltageConstraint() {
-        MotorFeedforward feedforward = new MotorFeedforward(
-                PARAMS.kS, PARAMS.kV / PARAMS.inPerTick, PARAMS.kA / PARAMS.inPerTick);
-        YawCouplingFeedforward yawCoupling = new YawCouplingFeedforward(
-                PARAMS.yawCouplingKsAxial, PARAMS.yawCouplingKvAxial);
-        return kinematics.new WheelVoltageConstraint(
+        MotorFeedforward feedforward =
+                new MotorFeedforward(
+                        PARAMS.kS, PARAMS.kV / PARAMS.inPerTick, PARAMS.kA / PARAMS.inPerTick);
+        YawCouplingFeedforward yawCoupling =
+                new YawCouplingFeedforward(PARAMS.yawCouplingKsAxial, PARAMS.yawCouplingKvAxial);
+        return kinematics
+        .new WheelVoltageConstraint(
                 feedforward, yawCoupling, PARAMS.maxVoltageForPlanning, PARAMS.cruiseFraction);
     }
 
@@ -167,11 +178,15 @@ public final class TankDrive {
     public final Localizer localizer;
     private final LinkedList<Pose2d> poseHistory = new LinkedList<>();
 
-    private final DownsampledWriter estimatedPoseWriter = new DownsampledWriter("ESTIMATED_POSE", 50_000_000);
-    private final DownsampledWriter targetPoseWriter = new DownsampledWriter("TARGET_POSE", 50_000_000);
-    private final DownsampledWriter driveCommandWriter = new DownsampledWriter("DRIVE_COMMAND", 50_000_000);
+    private final DownsampledWriter estimatedPoseWriter =
+            new DownsampledWriter("ESTIMATED_POSE", 50_000_000);
+    private final DownsampledWriter targetPoseWriter =
+            new DownsampledWriter("TARGET_POSE", 50_000_000);
+    private final DownsampledWriter driveCommandWriter =
+            new DownsampledWriter("DRIVE_COMMAND", 50_000_000);
 
-    private final DownsampledWriter tankCommandWriter = new DownsampledWriter("TANK_COMMAND", 50_000_000);
+    private final DownsampledWriter tankCommandWriter =
+            new DownsampledWriter("TANK_COMMAND", 50_000_000);
 
     public class DriveLocalizer implements Localizer {
         public final List<Encoder> leftEncs, rightEncs;
@@ -219,7 +234,8 @@ public final class TankDrive {
         public PoseVelocity2d update() {
             Twist2dDual<Time> delta;
 
-            List<PositionVelocityPair> leftReadings = new ArrayList<>(), rightReadings = new ArrayList<>();
+            List<PositionVelocityPair> leftReadings = new ArrayList<>(),
+                    rightReadings = new ArrayList<>();
             double meanLeftPos = 0.0, meanLeftVel = 0.0;
             for (Encoder e : leftEncs) {
                 PositionVelocityPair p = e.getPositionAndVelocity();
@@ -240,8 +256,9 @@ public final class TankDrive {
             meanRightPos /= rightEncs.size();
             meanRightVel /= rightEncs.size();
 
-            FlightRecorder.write("TANK_LOCALIZER_INPUTS",
-                     new TankLocalizerInputsMessage(leftReadings, rightReadings));
+            FlightRecorder.write(
+                    "TANK_LOCALIZER_INPUTS",
+                    new TankLocalizerInputsMessage(leftReadings, rightReadings));
 
             if (!initialized) {
                 initialized = true;
@@ -250,19 +267,21 @@ public final class TankDrive {
                 lastRightPos = meanRightPos;
 
                 return new PoseVelocity2d(new Vector2d(0.0, 0.0), 0.0);
-
             }
 
-            Twist2dDual<Time> twist = kinematics.forward(new TankKinematics.WheelIncrements<>(
-                    new DualNum<Time>(new double[]{
-                            meanLeftPos - lastLeftPos,
-                            meanLeftVel
-                    }).times(PARAMS.inPerTick),
-                    new DualNum<Time>(new double[]{
-                            meanRightPos - lastRightPos,
-                            meanRightVel,
-                    }).times(PARAMS.inPerTick)
-            ));
+            Twist2dDual<Time> twist =
+                    kinematics.forward(
+                            new TankKinematics.WheelIncrements<>(
+                                    new DualNum<Time>(
+                                                    new double[] {
+                                                        meanLeftPos - lastLeftPos, meanLeftVel
+                                                    })
+                                            .times(PARAMS.inPerTick),
+                                    new DualNum<Time>(
+                                                    new double[] {
+                                                        meanRightPos - lastRightPos, meanRightVel,
+                                                    })
+                                            .times(PARAMS.inPerTick)));
 
             lastLeftPos = meanLeftPos;
             lastRightPos = meanRightPos;
@@ -282,7 +301,8 @@ public final class TankDrive {
 
         // TODO: make sure your config has motors with these names (or change them)
         //   add additional motors on each side if you have them
-        //   see https://ftc-docs.firstinspires.org/en/latest/hardware_and_software_configuration/configuring/index.html
+        //   see
+        // https://ftc-docs.firstinspires.org/en/latest/hardware_and_software_configuration/configuring/index.html
         leftMotors = Arrays.asList(hardwareMap.get(DcMotorEx.class, "left"));
         rightMotors = Arrays.asList(hardwareMap.get(DcMotorEx.class, "right"));
 
@@ -297,20 +317,29 @@ public final class TankDrive {
         //   leftMotors.get(0).setDirection(DcMotorSimple.Direction.REVERSE);
 
         // TODO: make sure your config has an IMU with this name (can be BNO or BHI)
-        //   see https://ftc-docs.firstinspires.org/en/latest/hardware_and_software_configuration/configuring/index.html
-        lazyImu = new LazyHardwareMapImu(hardwareMap, "imu", new RevHubOrientationOnRobot(
-                PARAMS.logoFacingDirection, PARAMS.usbFacingDirection));
+        //   see
+        // https://ftc-docs.firstinspires.org/en/latest/hardware_and_software_configuration/configuring/index.html
+        lazyImu =
+                new LazyHardwareMapImu(
+                        hardwareMap,
+                        "imu",
+                        new RevHubOrientationOnRobot(
+                                PARAMS.logoFacingDirection, PARAMS.usbFacingDirection));
 
         voltageSensor = hardwareMap.voltageSensor.iterator().next();
 
+        // Drive encoders (default). When switching localizers, also set PARAMS.inPerTick:
+        //   Pinpoint: new PinpointLocalizer(hardwareMap, PARAMS.inPerTick, pose)
+        //     with pod scale (e.g. (48/25.4*PI)/2000 for goBILDA 48mm, 2000 ticks/rev)
+        //   OTOS: new OTOSLocalizer(hardwareMap, pose) and PARAMS.inPerTick = 1.0
         localizer = new DriveLocalizer(pose);
 
         FlightRecorder.write("TANK_PARAMS", PARAMS);
     }
 
     public void setDrivePowers(PoseVelocity2d powers) {
-        TankKinematics.WheelVelocities<Time> wheelVels = new TankKinematics(2).inverse(
-                PoseVelocity2dDual.constant(powers, 1));
+        TankKinematics.WheelVelocities<Time> wheelVels =
+                new TankKinematics(2).inverse(PoseVelocity2dDual.constant(powers, 1));
 
         double maxPowerMag = 1;
         for (DualNum<Time> power : wheelVels.all()) {
@@ -334,18 +363,22 @@ public final class TankDrive {
     public void setDriveCommand(PoseVelocity2dDual<Time> command) {
         TankKinematics.WheelVelocities<Time> wheelVels = kinematics.inverse(command);
         double voltage = voltageSensor.getVoltage();
-        final MotorFeedforward feedforward = new MotorFeedforward(PARAMS.kS,
-                PARAMS.kV / PARAMS.inPerTick, PARAMS.kA / PARAMS.inPerTick);
+        final MotorFeedforward feedforward =
+                new MotorFeedforward(
+                        PARAMS.kS, PARAMS.kV / PARAMS.inPerTick, PARAMS.kA / PARAMS.inPerTick);
 
         // Yaw-coupling feedforward: a per-wheel voltage that cancels the parasitic yaw from
         // forward/back translation. Entries follow wheel order (left, right). Zero constants
         // (the default) make this a no-op.
-        YawCouplingFeedforward yawCoupling = new YawCouplingFeedforward(
-                PARAMS.yawCouplingKsAxial, PARAMS.yawCouplingKvAxial);
-        List<Double> yawCouplingVoltages = kinematics.yawCouplingVoltages(yawCoupling, command.value());
+        YawCouplingFeedforward yawCoupling =
+                new YawCouplingFeedforward(PARAMS.yawCouplingKsAxial, PARAMS.yawCouplingKvAxial);
+        List<Double> yawCouplingVoltages =
+                kinematics.yawCouplingVoltages(yawCoupling, command.value());
 
-        double leftPower = (feedforward.compute(wheelVels.left) + yawCouplingVoltages.get(0)) / voltage;
-        double rightPower = (feedforward.compute(wheelVels.right) + yawCouplingVoltages.get(1)) / voltage;
+        double leftPower =
+                (feedforward.compute(wheelVels.left) + yawCouplingVoltages.get(0)) / voltage;
+        double rightPower =
+                (feedforward.compute(wheelVels.right) + yawCouplingVoltages.get(1)) / voltage;
         tankCommandWriter.write(new TankCommandMessage(voltage, leftPower, rightPower));
 
         for (DcMotorEx m : leftMotors) {
@@ -365,9 +398,9 @@ public final class TankDrive {
         public FollowTrajectoryAction(TimeTrajectory t) {
             timeTrajectory = t;
 
-            List<Double> disps = com.acmerobotics.roadrunner.Math.range(
-                    0, t.path.length(),
-                    Math.max(2, (int) Math.ceil(t.path.length() / 2)));
+            List<Double> disps =
+                    com.acmerobotics.roadrunner.Math.range(
+                            0, t.path.length(), Math.max(2, (int) Math.ceil(t.path.length() / 2)));
             xPoints = new double[disps.size()];
             yPoints = new double[disps.size()];
             for (int i = 0; i < disps.size(); i++) {
@@ -405,8 +438,10 @@ public final class TankDrive {
 
             updatePoseEstimate();
 
-            PoseVelocity2dDual<Time> command = new RamseteController(kinematics.trackWidth, PARAMS.ramseteZeta, PARAMS.ramseteBBar)
-                    .compute(x, txWorldTarget, localizer.getPose());
+            PoseVelocity2dDual<Time> command =
+                    new RamseteController(
+                                    kinematics.trackWidth, PARAMS.ramseteZeta, PARAMS.ramseteBBar)
+                            .compute(x, txWorldTarget, localizer.getPose());
             driveCommandWriter.write(new DriveCommandMessage(command));
 
             setDriveCommand(command);
@@ -482,19 +517,33 @@ public final class TankDrive {
 
             // Positive gains act on (target - actual), matching HolonomicController's convention.
             // (The stock quickstart has the operands flipped, which makes positive gains unstable.)
-            PoseVelocity2dDual<Time> command = new PoseVelocity2dDual<>(
-                    Vector2dDual.constant(new Vector2d(0, 0), 3),
-                    txWorldTarget.heading.velocity().plus(
-                            PARAMS.turnGain * txWorldTarget.heading.value().minus(localizer.getPose().heading) +
-                            PARAMS.turnVelGain * (txWorldTarget.heading.velocity().value() - robotVelRobot.angVel)
-                    )
-            );
+            PoseVelocity2dDual<Time> command =
+                    new PoseVelocity2dDual<>(
+                            Vector2dDual.constant(new Vector2d(0, 0), 3),
+                            txWorldTarget
+                                    .heading
+                                    .velocity()
+                                    .plus(
+                                            PARAMS.turnGain
+                                                            * txWorldTarget
+                                                                    .heading
+                                                                    .value()
+                                                                    .minus(
+                                                                            localizer.getPose()
+                                                                                    .heading)
+                                                    + PARAMS.turnVelGain
+                                                            * (txWorldTarget
+                                                                            .heading
+                                                                            .velocity()
+                                                                            .value()
+                                                                    - robotVelRobot.angVel)));
             driveCommandWriter.write(new DriveCommandMessage(command));
 
             TankKinematics.WheelVelocities<Time> wheelVels = kinematics.inverse(command);
             double voltage = voltageSensor.getVoltage();
-            final MotorFeedforward feedforward = new MotorFeedforward(PARAMS.kS,
-                    PARAMS.kV / PARAMS.inPerTick, PARAMS.kA / PARAMS.inPerTick);
+            final MotorFeedforward feedforward =
+                    new MotorFeedforward(
+                            PARAMS.kS, PARAMS.kV / PARAMS.inPerTick, PARAMS.kA / PARAMS.inPerTick);
             double leftPower = feedforward.compute(wheelVels.left) / voltage;
             double rightPower = feedforward.compute(wheelVels.right) / voltage;
             tankCommandWriter.write(new TankCommandMessage(voltage, leftPower, rightPower));
@@ -538,7 +587,6 @@ public final class TankDrive {
 
         estimatedPoseWriter.write(new PoseMessage(localizer.getPose()));
 
-
         return vel;
     }
 
@@ -563,15 +611,11 @@ public final class TankDrive {
         return new TrajectoryActionBuilder(
                 TurnAction::new,
                 FollowTrajectoryAction::new,
-                new TrajectoryBuilderParams(
-                        1e-6,
-                        new ProfileParams(
-                                0.25, 0.1, 1e-2
-                        )
-                ),
-                beginPose, 0.0,
+                new TrajectoryBuilderParams(1e-6, new ProfileParams(0.25, 0.1, 1e-2)),
+                beginPose,
+                0.0,
                 defaultTurnConstraints,
-                defaultVelConstraint, defaultAccelConstraint
-        );
+                defaultVelConstraint,
+                defaultAccelConstraint);
     }
 }

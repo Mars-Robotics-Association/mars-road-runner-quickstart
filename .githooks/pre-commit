@@ -102,7 +102,7 @@ if ! JAVA=$(find_java17); then
 fi
 
 if ! jar_works_with_java "$JAVA" "$JAR"; then
-    echo "error: $JAR is not compatible with $($JAVA -version 2>&1 | head -1)." >&2
+    echo "error: $JAR is not compatible with $("$JAVA" -version 2>&1 | head -1)." >&2
     echo "       google-java-format 1.29+ needs a newer JDK than many FTC setups have." >&2
     echo "       Install the pinned v${GJF_VERSION} jar:" >&2
     echo "         curl -fsSL -o \"$JAR\" \"$GJF_URL\"" >&2

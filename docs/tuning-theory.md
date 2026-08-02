@@ -15,6 +15,14 @@ You already know the physics pieces: friction, inertia, motors that make less to
 they spin faster (back-EMF). We package that into three constants and a few geometry
 numbers. Feedback (the “gains”) only cleans up whatever the model got wrong.
 
+**Feedforward vs feedback (catching a ball).** Feedforward is *running to the spot*
+where you think the ball will go — a big, early move based on what you already know about
+the throw (speed, arc, how throws like that usually behave). Feedback is *reaching with
+your hand* — watching the ball and making small corrections so you actually catch it.
+Road Runner is the same: the plant model ($k_S$, $k_V$, $k_A$) is the “run to the right
+place”; the gains are the hand. Gains alone cannot fix a missing model any more than
+arm-flailing can fix never moving your feet.
+
 ---
 
 ## Glossary (quick)
@@ -23,8 +31,8 @@ numbers. Feedback (the “gains”) only cleans up whatever the model got wrong.
 |------|--------------------|
 | **Plant** | The real physical system — the robot — and our math model of it |
 | **Identify** | Measure constants from data (fit a line, etc.), not pick them by feel |
-| **Feedforward (FF)** | Compute the voltage the model says you *should* need, *before* looking at error |
-| **Feedback** | Correct leftover error (PID-style gains on pose / velocity) |
+| **Feedforward (FF)** | “Run to the spot” — voltage the model says you *should* need, *before* looking at error |
+| **Feedback** | “Reach with your hand” — correct leftover error (PID-style gains on pose / velocity) |
 | **Localization** | Estimating where the robot is (encoders, Pinpoint, OTOS, …) |
 | **Regression / fit** | Best line (or curve) through a cloud of data points |
 
@@ -39,10 +47,12 @@ numbers. Feedback (the “gains”) only cleans up whatever the model got wrong.
 | “Tune lateral constants” | **Measure** strafe plant — mostly a **higher $k_S$** (friction); $k_V$/$k_A$ often similar |
 | “Tune gains” | **Choose** how aggressive the correction loop is — on top of a good model |
 
-$k_S$, $k_V$, and $k_A$ are **properties of the robot and floor**, not taste settings.
+$k_S$, $k_V$, and $k_A$ are **properties of the robot** (and the foam field tiles you
+drive on), not taste settings. Identify them on the same mat surface you compete on —
+not a different floor in the shop.
 
 - Heavier robot $\rightarrow$ often larger $k_A$ (more inertia).
-- Sticky carpet $\rightarrow$ often larger $k_S$ (more friction).
+- More drivetrain friction (bearings, scrub, worn rollers) $\rightarrow$ often larger $k_S$.
 - Different motors or gearing $\rightarrow$ different $k_V$.
 
 You do **not** “prefer a higher $k_V$.” You run the experiment, read the fit, and put that
@@ -175,7 +185,7 @@ effective width (rollers scrub), not a free gain you crank for fun.
 
 | Term | Physics picture | Typical size (mecanum-ish drivetrain) |
 |------|-----------------|----------------------------------------|
-| $k_S$ | Friction “cover charge” | often about $1\,\mathrm{V}$ |
+| $k_S$ | Friction “cover charge” | often about $1\mathrm{V}$ forward, $2\mathrm{V}$ strafing |
 | $k_V$ | Extra volts per unit speed | small in tick units (often $\sim 10^{-4}$) — scientific notation in telemetry is normal |
 | $k_A$ | Extra volts per unit accel | also small in tick units |
 
@@ -193,14 +203,16 @@ That’s a **straight line** if you plot voltage $V$ against speed $v$:
 So a slow open-loop **ramp** (gradually increase power, log $v$ and $V$) is just
 “collect points and fit a line.” You are **reading** $k_S$ and $k_V$ off the data.
 
-![Scatter of voltage versus speed from a slow ramp. A near-vertical breakaway cluster at low speed is shaded and discarded; an OLS line is fit only to moving samples (kS intercept, kV slope). A dashed line shows the biased fit if the knee were included.](media/plant-v-v-scatter.png)
+![Scatter of voltage versus speed from a slow ramp. A near-vertical breakaway cluster at low speed is shaded and discarded at about 3 in/s (1000 tick/s times inPerTick); an OLS line is fit only to moving samples (kS intercept, kV slope). A dashed line shows the biased fit if the knee were included.](media/plant-v-v-scatter.svg)
 
 **Why throw away the start of the ramp?** At the very beginning, **static friction**
 still holds the robot. Voltage climbs while speed stays near zero. On the plot that is a
 **near-vertical knee** — not the straight “already rolling” line. If you leave those
 points in, the fit for $k_S$ and $k_V$ gets biased (dashed line). The tuner keeps only
-samples above a minimum speed so it sees free rolling. (Same idea as stock
-`ForwardRampLogger`.)
+samples above a minimum speed so it sees free rolling. That cutoff is
+`MIN_RAMP_TICKS_PER_SEC` (default $1000$ tick units/s) times `inPerTick` — about
+**$3\,\mathrm{in/s}$** for a typical $48\,\mathrm{mm}$ odometry wheel — not a
+hand-picked inches value. (Same idea as stock `ForwardRampLogger`.)
 
 The cloud’s noise in the figure is synthetic; the **intercept and slope are scaled to
 representative mecanum plant values** (roughly $1\,\mathrm{V}$ of $k_S$ and a small
@@ -229,7 +241,7 @@ So the procedure is:
 (The code uses an integrated form so it doesn’t need a noisy numerical derivative for
 $a$.)
 
-![Two-by-two figure: slow ramp velocity and acceleration vs time, reverse square-wave velocity and acceleration vs time, scatter of a vs v on the ramp showing an affine line (collinear), and scatter under reversals filling the plane (decorrelated).](media/plant-two-maneuvers.png)
+![Two-by-two figure: slow ramp velocity and acceleration vs time, reverse square-wave velocity and acceleration vs time, scatter of a vs v on the ramp showing an affine line (collinear), and scatter under reversals filling the plane (decorrelated).](media/plant-two-maneuvers.svg)
 
 **Left column:** ramp — $a$ vs $v$ lies near a line $\Rightarrow$ $k_A$ is mixed into the
 other terms. **Right column:** reversals — $a$ vs $v$ fills the plane $\Rightarrow$ you
