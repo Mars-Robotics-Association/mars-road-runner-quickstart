@@ -290,30 +290,60 @@ if [[ $goto_summary -eq 0 ]]; then
     done < <(git config --file .gitmodules --get-regexp 'submodule\..*\.path' 2>/dev/null | awk '{print $2}')
 
   echo "[7/8] Git hooks / Java formatter..."
+    # Pin GJF to a release that runs on JDK 17 (project sourceCompatibility). 1.29+
+    # references JCTree$JCAnyPattern and fails on Java 17 with NoClassDefFoundError.
+    GJF_VERSION="1.28.0"
+    GJF_JAR="$HOME/.githooks/google-java-format.jar"
+    GJF_URL="https://github.com/google/google-java-format/releases/download/v${GJF_VERSION}/google-java-format-${GJF_VERSION}-all-deps.jar"
     git config core.hooksPath .githooks
     git update-index --chmod=+x .githooks/pre-commit 2>/dev/null || true
-    if [[ ! -f "$HOME/.githooks/google-java-format.jar" ]]; then
-      echo "      [WARN] google-java-format.jar not found at ~/.githooks/google-java-format.jar"
+    chmod +x .githooks/pre-commit 2>/dev/null || true
+
+    gjf_probe_ok() {
+      local jar="$1"
+      [[ -f "$jar" ]] || return 1
+      command -v java >/dev/null 2>&1 || return 1
+      echo 'class _GjfProbe { void m() { int x = 1; } }' \
+        | java -jar "$jar" --aosp - >/dev/null 2>&1
+    }
+
+    need_gjf_install=0
+    if [[ ! -f "$GJF_JAR" ]]; then
+      echo "      [WARN] google-java-format.jar not found at $GJF_JAR"
+      need_gjf_install=1
+    elif ! gjf_probe_ok "$GJF_JAR"; then
+      echo "      [WARN] $GJF_JAR is incompatible with the current Java runtime"
+      echo "             (common with GJF 1.29+ on JDK 17). Will offer pinned v${GJF_VERSION}."
+      need_gjf_install=1
+    else
+      echo "      [OK]   pre-commit hook configured (google-java-format works with this Java)"
+    fi
+
+    if [[ "$need_gjf_install" -eq 1 ]]; then
       if command -v curl >/dev/null 2>&1; then
-        read -r -p "             Download latest release now? [Y/N] " DL_CHOICE
+        read -r -p "             Download google-java-format ${GJF_VERSION} now? [Y/N] " DL_CHOICE
         if [[ "$DL_CHOICE" == "Y" || "$DL_CHOICE" == "y" ]]; then
           mkdir -p "$HOME/.githooks"
-          DL_URL=$(curl -fsSL "https://api.github.com/repos/google/google-java-format/releases/latest" \
-            | grep '"browser_download_url"' | grep 'all-deps' | head -n1 \
-            | sed 's/.*"browser_download_url": "\([^"]*\)".*/\1/')
-          if [[ -n "$DL_URL" ]] && curl -fsSL -o "$HOME/.githooks/google-java-format.jar" "$DL_URL"; then
-            echo "      [OK]   Downloaded $(basename "$DL_URL")"
+          if curl -fsSL -o "$GJF_JAR" "$GJF_URL"; then
+            if gjf_probe_ok "$GJF_JAR"; then
+              echo "      [OK]   Installed google-java-format ${GJF_VERSION}"
+            else
+              echo "      [WARN] Downloaded jar still fails under $(java -version 2>&1 | head -1)"
+              echo "             Need Java 17+ on PATH for the pre-commit hook."
+              WARNINGS=$((WARNINGS+1))
+            fi
           else
-            echo "      [WARN] Download failed -- install manually from https://github.com/google/google-java-format/releases/latest"
+            echo "      [WARN] Download failed -- install manually:"
+            echo "             $GJF_URL"
             WARNINGS=$((WARNINGS+1))
           fi
         else
-          echo "             Pre-commit Java formatting will be skipped until installed"
+          echo "             Pre-commit Java formatting will fail until a compatible jar is installed"
           WARNINGS=$((WARNINGS+1))
         fi
       else
-        echo "             Pre-commit Java formatting will be skipped until installed"
-        echo "             Download: https://github.com/google/google-java-format/releases/latest"
+        echo "             Install curl, or download manually:"
+        echo "             $GJF_URL"
         WARNINGS=$((WARNINGS+1))
       fi
     fi
