@@ -18,37 +18,40 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Automatic on-robot identification of the {@code yawCoupling*} feedforward constants — the parasitic
- * yaw (curl) a robot picks up when driving straight open-loop.
+ * Automatic on-robot identification of the {@code yawCoupling*} feedforward constants — the
+ * parasitic yaw (curl) a robot picks up when driving straight open-loop.
  *
- * <p>Unlike the stock ramp loggers (which record data for the offline tuning site), this OpMode drives
- * the ramp, fits the constants on the robot, and prints values you can paste straight into
- * {@code MecanumDrive.Params} / {@code TankDrive.Params}.
+ * <p>Unlike the stock ramp loggers (which record data for the offline tuning site), this OpMode
+ * drives the ramp, fits the constants on the robot, writes them into the live {@code PARAMS}
+ * statics, and prints values to paste into source for persistence across restart or redeploy.
  *
- * <p>How it works: it drives an open-loop power ramp (feedforward off, no heading correction) and, for
- * each sample above {@link #MIN_SPEED}, records the chassis velocity (from the localizer) against the
- * yaw rate (from the IMU). It regresses yaw rate {@code ω = a + b·v}, then converts to the yaw-mode
- * voltage that cancels it using the small-signal yaw plant gain {@code kV·trackWidth}:
- * {@code kS = −kV·trackWidth·a}, {@code kV_yaw = −kV·trackWidth·b}. Mecanum additionally runs a strafe
- * ramp for the lateral constants; tank uses the axial pair only.
+ * <p>How it works: it drives an open-loop power ramp (feedforward off, no heading correction) and,
+ * for each sample above {@link #MIN_SPEED}, records the chassis velocity (from the localizer)
+ * against the yaw rate (from the IMU). It regresses yaw rate {@code ω = a + b·v}, then converts to
+ * the yaw-mode voltage that cancels it using the small-signal yaw plant gain {@code kV·trackWidth}:
+ * {@code kS = −kV·trackWidth·a}, {@code kV_yaw = −kV·trackWidth·b}. Mecanum additionally runs a
+ * strafe ramp for the lateral constants; tank uses the axial pair only.
  *
  * <p>Prerequisites: localization and the drive feedforward ({@code kS}/{@code kV}/{@code kA}) must
- * already be tuned. Give the robot a clear straight lane of roughly 5–6 ft in each direction it will
- * ramp (forward, and sideways on mecanum). Press gamepad1 A during a ramp to cut power early (e.g.
- * before a wall); the fit uses whatever samples were collected.
+ * already be tuned. Give the robot a clear straight lane of roughly 5–6 ft in each direction it
+ * will ramp (forward, and sideways on mecanum). Press gamepad1 A during a ramp to cut power early
+ * (e.g. before a wall); the fit uses whatever samples were collected.
  */
 @Config
 public final class YawCouplingTuner extends LinearOpMode {
     /** Peak open-loop power reached at the end of the ramp. */
     public static double MAX_POWER = 0.4;
+
     /** Seconds spent ramping power from 0 to {@link #MAX_POWER}. */
     public static double RAMP_TIME = 2.5;
+
     /** Samples slower than this (in/s) are ignored as start-up transient / noise. */
     public static double MIN_SPEED = 5.0;
 
     @Override
     public void runOpMode() throws InterruptedException {
-        MultipleTelemetry telemetry = new MultipleTelemetry(this.telemetry, FtcDashboard.getInstance().getTelemetry());
+        MultipleTelemetry telemetry =
+                new MultipleTelemetry(this.telemetry, FtcDashboard.getInstance().getTelemetry());
 
         if (TuningOpModes.DRIVE_CLASS.equals(MecanumDrive.class)) {
             MecanumDrive drive = new MecanumDrive(hardwareMap, new Pose2d(0, 0, 0));
@@ -58,7 +61,8 @@ public final class YawCouplingTuner extends LinearOpMode {
 
             IMU imu = drive.lazyImu.get();
             telemetry.addLine("Mecanum yaw-coupling tuner.");
-            telemetry.addLine("Press START, then the robot ramps FORWARD, stops, then ramps SIDEWAYS.");
+            telemetry.addLine(
+                    "Press START, then the robot ramps FORWARD, stops, then ramps SIDEWAYS.");
             telemetry.addLine("Press gamepad1 A during a ramp to stop early (e.g. before a wall).");
             telemetry.addLine("Make sure both lanes are clear.");
             telemetry.update();
@@ -79,15 +83,24 @@ public final class YawCouplingTuner extends LinearOpMode {
             double kSLateral = factor * lat.intercept;
             double kVLateral = factor * lat.slope;
 
+            MecanumDrive.PARAMS.yawCouplingKsAxial = kSAxial;
+            MecanumDrive.PARAMS.yawCouplingKvAxial = kVAxial;
+            MecanumDrive.PARAMS.yawCouplingKsLateral = kSLateral;
+            MecanumDrive.PARAMS.yawCouplingKvLateral = kVLateral;
+
             while (opModeIsActive()) {
-                telemetry.addLine("=== Paste into MecanumDrive.Params ===");
+                telemetry.addLine("=== Written to live MecanumDrive.PARAMS ===");
                 telemetry.addData("yawCouplingKsAxial", "%.5f", kSAxial);
-                telemetry.addData("yawCouplingKvAxial", "%.5f", kVAxial);
+                telemetry.addData("yawCouplingKvAxial", "%.5e", kVAxial);
                 telemetry.addData("yawCouplingKsLateral", "%.5f", kSLateral);
-                telemetry.addData("yawCouplingKvLateral", "%.5f", kVLateral);
+                telemetry.addData("yawCouplingKvLateral", "%.5e", kVLateral);
                 telemetry.addLine();
-                telemetry.addData("forward fit R^2", "%.4f (%d/%d pts)", fwd.r2, fwd.used, fwd.total);
-                telemetry.addData("strafe fit R^2", "%.4f (%d/%d pts)", lat.r2, lat.used, lat.total);
+                telemetry.addData(
+                        "forward fit R^2", "%.4f (%d/%d pts)", fwd.r2, fwd.used, fwd.total);
+                telemetry.addData(
+                        "strafe fit R^2", "%.4f (%d/%d pts)", lat.r2, lat.used, lat.total);
+                telemetry.addLine(
+                        "Live for later OpModes this session. Paste into source to keep.");
                 telemetry.addLine("If a re-test shows the curl got WORSE, negate that pair.");
                 telemetry.update();
             }
@@ -99,8 +112,10 @@ public final class YawCouplingTuner extends LinearOpMode {
 
             IMU imu = drive.lazyImu.get();
             telemetry.addLine("Tank yaw-coupling tuner.");
-            telemetry.addLine("Press START, then the robot ramps FORWARD. Make sure the lane is clear.");
-            telemetry.addLine("Press gamepad1 A during the ramp to stop early (e.g. before a wall).");
+            telemetry.addLine(
+                    "Press START, then the robot ramps FORWARD. Make sure the lane is clear.");
+            telemetry.addLine(
+                    "Press gamepad1 A during the ramp to stop early (e.g. before a wall).");
             telemetry.update();
             waitForStart();
             if (isStopRequested()) return;
@@ -112,12 +127,18 @@ public final class YawCouplingTuner extends LinearOpMode {
             double kSAxial = factor * fwd.intercept;
             double kVAxial = factor * fwd.slope;
 
+            TankDrive.PARAMS.yawCouplingKsAxial = kSAxial;
+            TankDrive.PARAMS.yawCouplingKvAxial = kVAxial;
+
             while (opModeIsActive()) {
-                telemetry.addLine("=== Paste into TankDrive.Params ===");
+                telemetry.addLine("=== Written to live TankDrive.PARAMS ===");
                 telemetry.addData("yawCouplingKsAxial", "%.5f", kSAxial);
-                telemetry.addData("yawCouplingKvAxial", "%.5f", kVAxial);
+                telemetry.addData("yawCouplingKvAxial", "%.5e", kVAxial);
                 telemetry.addLine();
-                telemetry.addData("forward fit R^2", "%.4f (%d/%d pts)", fwd.r2, fwd.used, fwd.total);
+                telemetry.addData(
+                        "forward fit R^2", "%.4f (%d/%d pts)", fwd.r2, fwd.used, fwd.total);
+                telemetry.addLine(
+                        "Live for later OpModes this session. Paste into source to keep.");
                 telemetry.addLine("If a re-test shows the curl got WORSE, negate the pair.");
                 telemetry.update();
             }
@@ -129,16 +150,22 @@ public final class YawCouplingTuner extends LinearOpMode {
     private static void requireCalibrated(double kVWheel, double trackWidth) {
         if (kVWheel <= 0 || trackWidth <= 0) {
             throw new RuntimeException(
-                    "Tune the drive feedforward (kV) and track width before running YawCouplingTuner");
+                    "Tune the drive feedforward (kV) and track width before running"
+                        + " YawCouplingTuner");
         }
     }
 
     /**
-     * Ramps the mecanum drive open-loop (forward or sideways) and returns (velocity, yawRate) samples.
-     * Press gamepad1 A to end the ramp early; edge-detect so a held A from before START does not fire.
+     * Ramps the mecanum drive open-loop (forward or sideways) and returns (velocity, yawRate)
+     * samples. Press gamepad1 A to end the ramp early; edge-detect so a held A from before START
+     * does not fire.
      */
     private List<double[]> rampAndSample(
-            MecanumDrive drive, IMU imu, boolean forward, MultipleTelemetry telemetry, String label) {
+            MecanumDrive drive,
+            IMU imu,
+            boolean forward,
+            MultipleTelemetry telemetry,
+            String label) {
         List<double[]> samples = new ArrayList<>();
         ElapsedTime timer = new ElapsedTime();
         boolean stoppedByDriver = false;
@@ -160,7 +187,7 @@ public final class YawCouplingTuner extends LinearOpMode {
             double v = forward ? vel.linearVel.x : vel.linearVel.y;
             double omega = imu.getRobotAngularVelocity(AngleUnit.RADIANS).zRotationRate;
             if (Math.abs(v) > MIN_SPEED) {
-                samples.add(new double[]{v, omega});
+                samples.add(new double[] {v, omega});
             }
 
             telemetry.addData("phase", label);
@@ -175,13 +202,15 @@ public final class YawCouplingTuner extends LinearOpMode {
         ElapsedTime settle = new ElapsedTime();
         while (opModeIsActive() && settle.seconds() < 1.0) {
             drive.localizer.update();
-            telemetry.addData("phase", stoppedByDriver ? label + " (A stop) settling" : label + " settling");
+            telemetry.addData(
+                    "phase", stoppedByDriver ? label + " (A stop) settling" : label + " settling");
             telemetry.update();
         }
         return samples;
     }
 
-    private List<double[]> rampAndSampleTank(TankDrive drive, IMU imu, MultipleTelemetry telemetry) {
+    private List<double[]> rampAndSampleTank(
+            TankDrive drive, IMU imu, MultipleTelemetry telemetry) {
         List<double[]> samples = new ArrayList<>();
         ElapsedTime timer = new ElapsedTime();
         while (opModeIsActive() && timer.seconds() < RAMP_TIME) {
@@ -197,7 +226,7 @@ public final class YawCouplingTuner extends LinearOpMode {
             double v = vel.linearVel.x;
             double omega = imu.getRobotAngularVelocity(AngleUnit.RADIANS).zRotationRate;
             if (Math.abs(v) > MIN_SPEED) {
-                samples.add(new double[]{v, omega});
+                samples.add(new double[] {v, omega});
             }
 
             telemetry.addData("phase", "FORWARD");
@@ -212,7 +241,8 @@ public final class YawCouplingTuner extends LinearOpMode {
         return samples;
     }
 
-    private static void setMecanumPowers(MecanumDrive drive, double lf, double lb, double rb, double rf) {
+    private static void setMecanumPowers(
+            MecanumDrive drive, double lf, double lb, double rb, double rf) {
         drive.leftFront.setPower(lf);
         drive.leftBack.setPower(lb);
         drive.rightBack.setPower(rb);

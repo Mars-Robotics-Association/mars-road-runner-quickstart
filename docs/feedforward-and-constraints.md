@@ -15,7 +15,9 @@ This document covers, for both `MecanumDrive` and `TankDrive`:
 Tune these as part of the [automated tuning flow](tuning.md) — after localization and the
 drive feedforward (`kS`/`kV`/`kA` via `AxialFeedforwardTuner`), and before the feedback
 gains (`FeedbackGainTuner` folds the constants below into its plant model). They refine an
-already-working robot.
+already-working robot. Background on why the plant is identified (not “tuned”) and how
+Road Runner uses it for feedforward, planning, and gains:
+[Plant Model and Identification](tuning-theory.md).
 
 ---
 
@@ -56,16 +58,17 @@ All default to `0` (disabled).
 
 Run the **`YawCouplingTuner`** OpMode (registered by `TuningOpModes`, group `quickstart`).
 Unlike the stock ramp loggers, it does the whole job on the robot: it drives an open-loop
-ramp, measures the parasitic yaw rate against chassis velocity, fits the constants, and
-prints values ready to paste into `Params`.
+ramp, measures the parasitic yaw rate against chassis velocity, fits the constants, writes
+them into live `PARAMS`, and prints values to paste into source for persistence.
 
 1. Finish localization and drive-feedforward (`kS`/`kV`/`kA`) tuning first.
 2. Clear a straight lane ~5–6 ft long (both a forward lane and a sideways lane on mecanum).
 3. Run `YawCouplingTuner`. On mecanum it ramps forward, stops, then ramps sideways; on tank
-   it ramps forward only. When it finishes it displays `yawCouplingKsAxial` / `KvAxial`
-   (and `KsLateral` / `KvLateral` on mecanum) on Driver Station and Dashboard telemetry.
-4. Paste the values into `Params`, then re-run the straight-line test. The curl should be
-   largely gone before heading feedback engages.
+   it ramps forward only. When it finishes it writes `yawCouplingKsAxial` / `KvAxial`
+   (and `KsLateral` / `KvLateral` on mecanum) into live `PARAMS` and shows the same values
+   on Driver Station and Dashboard telemetry.
+4. Re-run a straight-line check (no paste needed in-session). The curl should be largely
+   gone before heading feedback engages. Paste into source before restart or redeploy.
 
 > The sign is derived from the yaw plant gain `−kV · trackWidth`, but conventions vary — if
 > a re-test shows the curl got *worse*, negate that pair. `MAX_POWER`, `RAMP_TIME`, and
@@ -115,11 +118,13 @@ It is the strafe counterpart of `AxialFeedforwardTuner` (see the section below):
 reverse procedure applied as a pure strafe for `lateralKS`/`lateralKV`/`lateralKA`. Wheel
 velocity is the localizer's lateral chassis velocity times the drive's `lateralMultiplier`.
 
-1. Run `AxialFeedforwardTuner` to get `kS`/`kV`/`kA` (the **axial** constants).
+1. Run `AxialFeedforwardTuner` to get `kS`/`kV`/`kA` (the **axial** constants). A full fit
+   writes them into live `PARAMS` for the rest of the RC session.
 2. Run `LateralFeedforwardTuner`. It **ramps LEFT** (robot +y) first; a wall on the robot's
    left is OK. Leave room on the right for the reverse phase.
-3. Paste the printed `lateralKS` / `lateralKV` / `lateralKA` into `Params` and set
-   `useAnisotropicFeedforward = true`.
+3. On success it writes `lateralKS` / `lateralKV` / `lateralKA` and sets
+   `useAnisotropicFeedforward = true` on live `PARAMS`. Paste into source before
+   restart/redeploy.
 
 Expect **lateral kS** to be clearly larger than axial (often ~1.5–2×) — roller scrub is
 mostly extra static/coulomb friction. **lateral kV / kA** are often only modestly higher

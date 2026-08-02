@@ -1,9 +1,14 @@
 # Automated Tuning Flow
 
 The `mars` branch replaces most of the stock Road Runner tuning procedure with on-robot
-sysid OpModes that drive a maneuver, fit the constants, and print values to paste into
-`Params`. This is the recommended flow; the [stock manual procedure](https://rr.brott.dev/docs/v1-0/tuning/)
+sysid OpModes that drive a maneuver, fit the constants, write them into the live `PARAMS`
+statics (so later steps in the same robot-controller process can chain without pasting), and
+print the same values for pasting into source so they survive restart or redeploy. This is
+the recommended flow; the [stock manual procedure](https://rr.brott.dev/docs/v1-0/tuning/)
 remains available and is a useful fallback when an automatic fit looks suspect.
+
+For the physics, plant model, and *why* the steps are ordered this way (identification vs.
+knob-turning), see **[Plant Model and Identification](tuning-theory.md)**.
 
 Most drive tuners are registered under the `quickstart` OpMode group;
 `Pinpoint Offset Tuner` is under `Tuning`. Steps marked **manual** can't be
@@ -40,9 +45,18 @@ Notes on the flow:
   behind them and for the opt-in path constraints (wheel voltage, centripetal).
 - **Step 8 replaces guess-and-check gain tuning.** `ManualFeedbackTuner` is still the
   right way to *verify* the result, but you should no longer need it to find the numbers.
-- The automatic tuners print values on Driver Station / Dashboard telemetry when they
-  finish. Paste them into the `Params` inner class of `MecanumDrive` / `TankDrive` so
-  they persist.
+- The automatic tuners (steps 4–8) write successful fits into the live `PARAMS` statics
+  when they finish, so you can run the next step without pasting first — statics normally
+  last for the whole RC process across OpMode stop/start. They also print the values on
+  Driver Station / Dashboard telemetry: paste into the `Params` inner class of
+  `MecanumDrive` / `TankDrive` (or localizer params) before you restart the app or
+  redeploy, or the session values are lost.
+- **One-stop copy page:** after chaining the automatic steps (or any time), open the
+  Driver Station **Utility** menu and run **`Show Drive Params`**. It reads only the live
+  statics (no hardware), dumps geometry, feedforward, yaw coupling, gains, and localizer
+  offsets in paste-friendly formats (`kV`/`kA` as scientific notation), and mirrors the
+  same lines to FTC Dashboard. Use it when you are ready to commit session values into
+  source.
 - **Using a goBILDA Pinpoint or SparkFun OTOS?** Step 3 changes character: those devices
   own localization entirely, and `trackWidthTicks` matters much less. See
   [below](#trackwidthticks-with-a-pinpoint-or-otos).
@@ -81,9 +95,10 @@ In practice that makes it a **get-within-~10%-and-move-on** parameter:
    configurations don't include them. Don't hunt for the missing output; run
    **`TrackWidthTuner`** (step 5) after the feedforward is tuned. It spins the robot
    through the feedforward with a ramped commanded yaw rate, regresses the actual yaw
-   rate (from the hub IMU) against it, and prints the corrected `trackWidthTicks` — a
-   wrong value shows up as a slope off 1.0, and the correction is just dividing by it.
-   Re-run after pasting; the slope should come back ≈ 1.00.
+   rate (from the hub IMU) against it, writes the corrected `trackWidthTicks` into live
+   `PARAMS`, and prints it — a wrong value shows up as a slope off 1.0, and the
+   correction is just dividing by it. Re-run (no paste needed in-session); the slope
+   should come back ≈ 1.00.
 3. Residual error is absorbed automatically: `FeedbackGainTuner` tunes the heading loop
    against the plant as it actually responds, so a few percent of track-width error just
    shifts the heading gains it lands on.
@@ -206,14 +221,15 @@ are all in the loop — the gains are tuned against exactly the plant they'll co
 
 1. Finish localization and feedforward tuning first (steps 1–7 above). `kA` must be
    tuned and positive — `τ = kA/kV` is the model the synthesis relies on. The tuner
-   refuses to run otherwise.
+   refuses to run otherwise. Prior automatic steps write into live `PARAMS`, so you can
+   continue in the same RC session without pasting first.
 2. Clear about 2 ft around the robot in every direction. It rotates in place, then steps
    forward/back, then sideways.
 3. Run `FeedbackGainTuner`. Watch the iteration telemetry; when it finishes it prints
    all six gains (two for tank) and writes them into `PARAMS`, so they are live for the
    rest of the session.
-4. Paste the values into `Params`, then verify with `ManualFeedbackTuner` and
-   `SplineTest`.
+4. Paste the values into `Params` before restart/redeploy, then verify with
+   `ManualFeedbackTuner` and `SplineTest`.
 
 ### Knobs (Dashboard)
 

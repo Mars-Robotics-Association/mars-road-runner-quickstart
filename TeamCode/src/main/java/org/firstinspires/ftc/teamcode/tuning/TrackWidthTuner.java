@@ -37,31 +37,39 @@ import java.util.function.Consumer;
  * is independent of the localizer and of {@code trackWidthTicks}) against commanded yaw rate, and
  * reports {@code trackWidthTicks / slope} as the corrected value.
  *
- * <p>Prerequisites: the drive feedforward ({@code kS}/{@code kV}, ideally {@code kA}) must be
- * tuned — the spin is driven open-loop through it. {@code trackWidthTicks} may be left at 0; the
- * tuner then seeds a nominal geometric track width ({@link #DEFAULT_TRACK_WIDTH_IN} / {@code
- * inPerTick}) so the multiplicative fit can run. A tape-measure value is still fine if you have
- * one. After pasting the corrected value, re-run to verify: the slope should come out ≈ 1.00.
+ * <p>Prerequisites: the drive feedforward ({@code kS}/{@code kV}, ideally {@code kA}) must be tuned
+ * — the spin is driven open-loop through it. {@code trackWidthTicks} may be left at 0; the tuner
+ * then seeds a nominal geometric track width ({@link #DEFAULT_TRACK_WIDTH_IN} / {@code inPerTick})
+ * so the multiplicative fit can run. A tape-measure value is still fine if you have one. On a
+ * successful fit, writes the corrected {@code trackWidthTicks} into the live {@code PARAMS} statics
+ * so later OpModes in the same RC process can chain without a paste. Re-run to verify: the slope
+ * should come out ≈ 1.00. Paste into source to keep values across restart or redeploy.
  */
 @Config
 public final class TrackWidthTuner extends LinearOpMode {
     /** Peak commanded angular velocity at the end of each ramp, in rad/s. */
     public static double MAX_ANG_VEL = Math.PI;
+
     /** Seconds spent ramping the commanded angular velocity from 0 to {@link #MAX_ANG_VEL}. */
     public static double RAMP_TIME = 3.0;
-    /** Samples with commanded angular velocity below this (rad/s) are ignored as start-up transient. */
+
+    /**
+     * Samples with commanded angular velocity below this (rad/s) are ignored as start-up transient.
+     */
     public static double MIN_ANG_VEL = 0.5;
+
     /**
      * Nominal geometric track width in inches used when {@code Params.trackWidthTicks} is unset
-     * ({@code <= 0}). Converted to ticks via {@code / inPerTick}. The robot size limit is 18 in;
-     * 16 in leaves margin under that for a typical wheel-center track. Mecanum effective width
-     * often comes out somewhat larger after correction because of roller scrub.
+     * ({@code <= 0}). Converted to ticks via {@code / inPerTick}. The robot size limit is 18 in; 16
+     * in leaves margin under that for a typical wheel-center track. Mecanum effective width often
+     * comes out somewhat larger after correction because of roller scrub.
      */
     public static double DEFAULT_TRACK_WIDTH_IN = 16.0;
 
     @Override
     public void runOpMode() throws InterruptedException {
-        MultipleTelemetry telemetry = new MultipleTelemetry(this.telemetry, FtcDashboard.getInstance().getTelemetry());
+        MultipleTelemetry telemetry =
+                new MultipleTelemetry(this.telemetry, FtcDashboard.getInstance().getTelemetry());
 
         Consumer<PoseVelocity2dDual<Time>> setCommand;
         IMU imu;
@@ -72,8 +80,9 @@ public final class TrackWidthTuner extends LinearOpMode {
             requireFeedforward(MecanumDrive.PARAMS.kV);
             usedDefaultSeed = MecanumDrive.PARAMS.trackWidthTicks <= 0;
             // Kinematics bake trackWidthTicks at construction — seed Params first when unset.
-            trackWidthTicks = resolveTrackWidthTicks(
-                    MecanumDrive.PARAMS.trackWidthTicks, MecanumDrive.PARAMS.inPerTick);
+            trackWidthTicks =
+                    resolveTrackWidthTicks(
+                            MecanumDrive.PARAMS.trackWidthTicks, MecanumDrive.PARAMS.inPerTick);
             MecanumDrive.PARAMS.trackWidthTicks = trackWidthTicks;
             MecanumDrive drive = new MecanumDrive(hardwareMap, new Pose2d(0, 0, 0));
             setCommand = drive::setDriveCommand;
@@ -82,8 +91,9 @@ public final class TrackWidthTuner extends LinearOpMode {
         } else if (TuningOpModes.DRIVE_CLASS.equals(TankDrive.class)) {
             requireFeedforward(TankDrive.PARAMS.kV);
             usedDefaultSeed = TankDrive.PARAMS.trackWidthTicks <= 0;
-            trackWidthTicks = resolveTrackWidthTicks(
-                    TankDrive.PARAMS.trackWidthTicks, TankDrive.PARAMS.inPerTick);
+            trackWidthTicks =
+                    resolveTrackWidthTicks(
+                            TankDrive.PARAMS.trackWidthTicks, TankDrive.PARAMS.inPerTick);
             TankDrive.PARAMS.trackWidthTicks = trackWidthTicks;
             TankDrive drive = new TankDrive(hardwareMap, new Pose2d(0, 0, 0));
             setCommand = drive::setDriveCommand;
@@ -95,12 +105,16 @@ public final class TrackWidthTuner extends LinearOpMode {
 
         telemetry.addLine("Track width tuner.");
         if (usedDefaultSeed) {
-            telemetry.addData("seed", "default %.1f in → trackWidthTicks=%.2f",
-                    DEFAULT_TRACK_WIDTH_IN, trackWidthTicks);
+            telemetry.addData(
+                    "seed",
+                    "default %.1f in → trackWidthTicks=%.2f",
+                    DEFAULT_TRACK_WIDTH_IN,
+                    trackWidthTicks);
         } else {
             telemetry.addData("seed", "Params trackWidthTicks=%.2f", trackWidthTicks);
         }
-        telemetry.addLine("Press START, then the robot spins in place: counterclockwise, then clockwise.");
+        telemetry.addLine(
+                "Press START, then the robot spins in place: counterclockwise, then clockwise.");
         telemetry.addLine("Make sure it can rotate freely.");
         telemetry.update();
         waitForStart();
@@ -118,21 +132,54 @@ public final class TrackWidthTuner extends LinearOpMode {
         boolean valid = slope > 0.2 && slope < 5.0;
         double corrected = valid ? trackWidthTicks / slope : Double.NaN;
 
+        // Kinematics bake trackWidthTicks at drive construction, so this OpMode's instance keeps
+        // the seed; the next OpMode init picks up the corrected static.
+        if (valid) {
+            if (TuningOpModes.DRIVE_CLASS.equals(MecanumDrive.class)) {
+                MecanumDrive.PARAMS.trackWidthTicks = corrected;
+            } else {
+                TankDrive.PARAMS.trackWidthTicks = corrected;
+            }
+        }
+
         while (opModeIsActive()) {
             if (valid) {
-                telemetry.addLine("=== Paste into " + paramsClass + " ===");
+                telemetry.addLine("=== Written to live " + paramsClass + " ===");
                 telemetry.addData("trackWidthTicks", "%.2f", corrected);
                 telemetry.addLine();
-                telemetry.addData("seed used", "%.2f%s", trackWidthTicks,
+                telemetry.addData(
+                        "seed used",
+                        "%.2f%s",
+                        trackWidthTicks,
                         usedDefaultSeed ? " (default geometric)" : "");
                 telemetry.addData("slope (actual/commanded)", "%.4f", slope);
-                telemetry.addData("ccw fit", "slope %.4f, R^2 %.4f (%d/%d pts)", ccw.slope, ccw.r2, ccw.used, ccw.total);
-                telemetry.addData("cw fit", "slope %.4f, R^2 %.4f (%d/%d pts)", cw.slope, cw.r2, cw.used, cw.total);
-                telemetry.addLine("Re-run after pasting: the slope should be ~1.00.");
+                telemetry.addData(
+                        "ccw fit",
+                        "slope %.4f, R^2 %.4f (%d/%d pts)",
+                        ccw.slope,
+                        ccw.r2,
+                        ccw.used,
+                        ccw.total);
+                telemetry.addData(
+                        "cw fit",
+                        "slope %.4f, R^2 %.4f (%d/%d pts)",
+                        cw.slope,
+                        cw.r2,
+                        cw.used,
+                        cw.total);
+                telemetry.addLine(
+                        "Live for later OpModes this session. Paste into source to keep.");
+                telemetry.addLine("Re-run to verify: the slope should be ~1.00.");
             } else {
-                telemetry.addLine("FAILED: fitted slope " + String.format("%.3f", slope) + " is not plausible.");
+                telemetry.addLine(
+                        "FAILED: fitted slope "
+                                + String.format("%.3f", slope)
+                                + " is not plausible.");
                 telemetry.addLine("Check motor directions and feedforward (kS/kV), then retry.");
-                telemetry.addData("seed used", "%.2f%s", trackWidthTicks,
+                telemetry.addData(
+                        "seed used",
+                        "%.2f%s",
+                        trackWidthTicks,
                         usedDefaultSeed ? " (default geometric)" : "");
             }
             telemetry.update();
@@ -142,7 +189,8 @@ public final class TrackWidthTuner extends LinearOpMode {
     private static void requireFeedforward(double kV) {
         if (kV <= 0) {
             throw new RuntimeException(
-                    "Tune the drive feedforward (kS/kV) before running TrackWidthTuner — the spin is driven through it.");
+                    "Tune the drive feedforward (kS/kV) before running TrackWidthTuner — the spin"
+                        + " is driven through it.");
         }
     }
 
@@ -156,8 +204,10 @@ public final class TrackWidthTuner extends LinearOpMode {
         }
         if (inPerTick <= 0) {
             throw new RuntimeException(
-                    "Set inPerTick (ForwardPushTest) before TrackWidthTuner — needed to seed trackWidthTicks from "
-                            + DEFAULT_TRACK_WIDTH_IN + " in.");
+                    "Set inPerTick (ForwardPushTest) before TrackWidthTuner — needed to seed"
+                        + " trackWidthTicks from "
+                            + DEFAULT_TRACK_WIDTH_IN
+                            + " in.");
         }
         return DEFAULT_TRACK_WIDTH_IN / inPerTick;
     }
@@ -167,20 +217,24 @@ public final class TrackWidthTuner extends LinearOpMode {
      * (commanded, actual) yaw-rate samples, actual taken from the hub IMU.
      */
     private List<double[]> rampAndSample(
-            Consumer<PoseVelocity2dDual<Time>> setCommand, IMU imu, int dir,
-            MultipleTelemetry telemetry, String label) {
+            Consumer<PoseVelocity2dDual<Time>> setCommand,
+            IMU imu,
+            int dir,
+            MultipleTelemetry telemetry,
+            String label) {
         List<double[]> samples = new ArrayList<>();
         double alpha = dir * MAX_ANG_VEL / RAMP_TIME;
         ElapsedTime timer = new ElapsedTime();
         while (opModeIsActive() && timer.seconds() < RAMP_TIME) {
             double omegaCmd = alpha * timer.seconds();
-            setCommand.accept(new PoseVelocity2dDual<>(
-                    Vector2dDual.constant(new Vector2d(0, 0), 3),
-                    new DualNum<>(new double[]{omegaCmd, alpha, 0})));
+            setCommand.accept(
+                    new PoseVelocity2dDual<>(
+                            Vector2dDual.constant(new Vector2d(0, 0), 3),
+                            new DualNum<>(new double[] {omegaCmd, alpha, 0})));
 
             double omegaActual = imu.getRobotAngularVelocity(AngleUnit.RADIANS).zRotationRate;
             if (Math.abs(omegaCmd) > MIN_ANG_VEL) {
-                samples.add(new double[]{omegaCmd, omegaActual});
+                samples.add(new double[] {omegaCmd, omegaActual});
             }
 
             telemetry.addData("phase", label);
@@ -189,9 +243,9 @@ public final class TrackWidthTuner extends LinearOpMode {
             telemetry.addData("samples", samples.size());
             telemetry.update();
         }
-        setCommand.accept(new PoseVelocity2dDual<>(
-                Vector2dDual.constant(new Vector2d(0, 0), 3),
-                DualNum.constant(0, 3)));
+        setCommand.accept(
+                new PoseVelocity2dDual<>(
+                        Vector2dDual.constant(new Vector2d(0, 0), 3), DualNum.constant(0, 3)));
         // brief coast so the next ramp starts from rest
         ElapsedTime settle = new ElapsedTime();
         while (opModeIsActive() && settle.seconds() < 1.0) {

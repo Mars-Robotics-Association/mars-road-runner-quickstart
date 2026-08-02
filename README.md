@@ -32,7 +32,9 @@ Tuning is largely automated: on-robot sysid OpModes identify the feedforward con
 (`AxialFeedforwardTuner`, `LateralFeedforwardTuner`, `YawCouplingTuner`), `TrackWidthTuner`
 corrects the effective track width (the only way to measure it on Pinpoint/OTOS setups),
 and `FeedbackGainTuner` finds the follower feedback gains by automated bump tests. See the
-[automated tuning flow](docs/tuning.md) for the recommended procedure and the
+[automated tuning flow](docs/tuning.md) for the recommended procedure, the
+[plant model and identification theory](docs/tuning-theory.md) for the physics and strategy
+behind those numbers, and the
 [feedforward and constraints guide](docs/feedforward-and-constraints.md) for the models
 behind the extensions.
 

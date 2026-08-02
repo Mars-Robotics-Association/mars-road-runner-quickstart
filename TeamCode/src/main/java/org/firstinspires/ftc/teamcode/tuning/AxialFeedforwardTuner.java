@@ -31,6 +31,11 @@ import java.util.function.DoubleSupplier;
  *
  * <p>Prerequisites: localization tuned and sign-correct (drive forward → +x). A wall ahead is OK —
  * the ramp stops on contact and reverse half-cycles run within the distance just driven.
+ *
+ * <p>On a successful full fit, writes {@code kS}/{@code kV}/{@code kA} into the live {@code PARAMS}
+ * statics so later tuning OpModes in the same RC process can chain without a paste. A ramp-only (kA
+ * failed) fit still writes {@code kS}/{@code kV}. Paste into source to keep values across restart
+ * or redeploy.
  */
 @Config
 public final class AxialFeedforwardTuner extends LinearOpMode {
@@ -183,30 +188,72 @@ public final class AxialFeedforwardTuner extends LinearOpMode {
                         ARM_TRAVEL_IN,
                         POS_STALL_SPEED);
 
+        boolean wroteRampOnly = false;
+        if (!fit.singular) {
+            writeAxialParams(driveName, fit.kS, fit.kV, fit.kA, true);
+        } else if (fit.rampSamples > 0
+                && Double.isFinite(fit.kS)
+                && fit.kS != 0
+                && Double.isFinite(fit.kV)
+                && fit.kV > 0) {
+            // Unblocks TrackWidthTuner / YawCoupling; leave kA untouched if reverse phase failed.
+            writeAxialParams(driveName, fit.kS, fit.kV, Double.NaN, false);
+            wroteRampOnly = true;
+        }
+
         while (opModeIsActive()) {
             if (fit.singular) {
                 telemetry.addLine("Fit failed: " + fit.message);
                 telemetry.addData("samples", fit.samples);
                 telemetry.addData("ramp samples used", fit.rampSamples);
-                if (fit.rampSamples > 0 && Double.isFinite(fit.kS) && fit.kS != 0) {
-                    telemetry.addLine("Ramp-only (kA not trusted):");
+                if (wroteRampOnly) {
+                    telemetry.addLine("Ramp-only kS/kV written to live PARAMS (kA not updated):");
                     telemetry.addData("kS", "%.5f", fit.kS);
-                    telemetry.addData("kV", "%.6f", fit.kV);
+                    telemetry.addData("kV", "%.5e", fit.kV);
+                    telemetry.addData("ramp R^2", "%.3f", fit.rampR2);
+                    telemetry.addLine("Still paste into source to keep after restart.");
+                } else if (fit.rampSamples > 0 && Double.isFinite(fit.kS) && fit.kS != 0) {
+                    telemetry.addLine("Ramp-only (kA not trusted; not written — kV unusable):");
+                    telemetry.addData("kS", "%.5f", fit.kS);
+                    telemetry.addData("kV", "%.5e", fit.kV);
                     telemetry.addData("ramp R^2", "%.3f", fit.rampR2);
                 }
             } else {
-                telemetry.addLine("=== Paste into " + driveName + ".Params ===");
+                telemetry.addLine("=== Written to live " + driveName + ".PARAMS ===");
                 telemetry.addData("kS", "%.5f", fit.kS);
-                telemetry.addData("kV", "%.6f", fit.kV);
-                telemetry.addData("kA", "%.6f", fit.kA);
+                telemetry.addData("kV", "%.5e", fit.kV);
+                telemetry.addData("kA", "%.5e", fit.kA);
                 telemetry.addLine();
                 telemetry.addData("samples", fit.samples);
                 telemetry.addData("ramp samples used", fit.rampSamples);
                 telemetry.addData("ramp R^2", "%.3f", fit.rampR2);
                 telemetry.addLine(
+                        "Live for later OpModes this session. Paste into source to keep.");
+                telemetry.addLine(
                         "kS/kV should match ForwardRampLogger closely; kA is the new piece.");
             }
             telemetry.update();
+        }
+    }
+
+    /**
+     * Writes axial feedforward into the drive's live {@code PARAMS}. When {@code writeKA} is false,
+     * only {@code kS}/{@code kV} are updated (partial ramp fit).
+     */
+    private static void writeAxialParams(
+            String driveName, double kS, double kV, double kA, boolean writeKA) {
+        if ("MecanumDrive".equals(driveName)) {
+            MecanumDrive.PARAMS.kS = kS;
+            MecanumDrive.PARAMS.kV = kV;
+            if (writeKA) {
+                MecanumDrive.PARAMS.kA = kA;
+            }
+        } else {
+            TankDrive.PARAMS.kS = kS;
+            TankDrive.PARAMS.kV = kV;
+            if (writeKA) {
+                TankDrive.PARAMS.kA = kA;
+            }
         }
     }
 }

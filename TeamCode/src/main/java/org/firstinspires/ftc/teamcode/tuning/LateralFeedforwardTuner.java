@@ -25,8 +25,14 @@ import java.util.function.DoubleSupplier;
  * power (or on gamepad1 A), then reverses RIGHT for kA. See {@link ReversalFeedforwardId}.
  *
  * <p>Prerequisites: localization and axial feedforward already tuned. Leave room on the right for
- * reverse; a wall on the left is fine. After pasting, set {@code useAnisotropicFeedforward = true}.
- * Expect lateral constants to exceed their axial counterparts (roller scrub).
+ * reverse; a wall on the left is fine. Expect lateral constants to exceed their axial counterparts
+ * (roller scrub).
+ *
+ * <p>On a successful full fit, writes {@code lateralKS}/{@code lateralKV}/{@code lateralKA} and
+ * sets {@code useAnisotropicFeedforward = true} on the live {@code PARAMS} statics so later OpModes
+ * in the same RC process can chain without a paste. A ramp-only fit still writes {@code
+ * lateralKS}/{@code lateralKV} and enables anisotropic mode. Paste into source to keep values
+ * across restart or redeploy.
  */
 @Config
 public final class LateralFeedforwardTuner extends LinearOpMode {
@@ -186,28 +192,55 @@ public final class LateralFeedforwardTuner extends LinearOpMode {
                         ARM_TRAVEL_IN,
                         POS_STALL_SPEED);
 
+        boolean wroteRampOnly = false;
+        if (!fit.singular) {
+            MecanumDrive.PARAMS.lateralKS = fit.kS;
+            MecanumDrive.PARAMS.lateralKV = fit.kV;
+            MecanumDrive.PARAMS.lateralKA = fit.kA;
+            MecanumDrive.PARAMS.useAnisotropicFeedforward = true;
+        } else if (fit.rampSamples > 0
+                && Double.isFinite(fit.kS)
+                && fit.kS != 0
+                && Double.isFinite(fit.kV)
+                && fit.kV > 0) {
+            MecanumDrive.PARAMS.lateralKS = fit.kS;
+            MecanumDrive.PARAMS.lateralKV = fit.kV;
+            MecanumDrive.PARAMS.useAnisotropicFeedforward = true;
+            wroteRampOnly = true;
+        }
+
         while (opModeIsActive()) {
             if (fit.singular) {
                 telemetry.addLine("Fit failed: " + fit.message);
                 telemetry.addData("samples", fit.samples);
                 telemetry.addData("ramp samples used", fit.rampSamples);
                 // Ramp kS/kV may still be usable when only the reverse/kA phase failed.
-                if (fit.rampSamples > 0 && Double.isFinite(fit.kS) && fit.kS != 0) {
-                    telemetry.addLine("Ramp-only (kA not trusted):");
+                if (wroteRampOnly) {
+                    telemetry.addLine(
+                            "Ramp-only lateralKS/KV written to live PARAMS (kA not updated):");
+                    telemetry.addData("useAnisotropicFeedforward", true);
                     telemetry.addData("lateralKS", "%.5f", fit.kS);
-                    telemetry.addData("lateralKV", "%.6f", fit.kV);
+                    telemetry.addData("lateralKV", "%.5e", fit.kV);
+                    telemetry.addData("ramp R^2", "%.3f", fit.rampR2);
+                    telemetry.addLine("Still paste into source to keep after restart.");
+                } else if (fit.rampSamples > 0 && Double.isFinite(fit.kS) && fit.kS != 0) {
+                    telemetry.addLine("Ramp-only (kA not trusted; not written — kV unusable):");
+                    telemetry.addData("lateralKS", "%.5f", fit.kS);
+                    telemetry.addData("lateralKV", "%.5e", fit.kV);
                     telemetry.addData("ramp R^2", "%.3f", fit.rampR2);
                 }
             } else {
-                telemetry.addLine("=== Paste into MecanumDrive.Params ===");
+                telemetry.addLine("=== Written to live MecanumDrive.PARAMS ===");
                 telemetry.addData("useAnisotropicFeedforward", true);
                 telemetry.addData("lateralKS", "%.5f", fit.kS);
-                telemetry.addData("lateralKV", "%.6f", fit.kV);
-                telemetry.addData("lateralKA", "%.6f", fit.kA);
+                telemetry.addData("lateralKV", "%.5e", fit.kV);
+                telemetry.addData("lateralKA", "%.5e", fit.kA);
                 telemetry.addLine();
                 telemetry.addData("samples", fit.samples);
                 telemetry.addData("ramp samples used", fit.rampSamples);
                 telemetry.addData("ramp R^2", "%.3f", fit.rampR2);
+                telemetry.addLine(
+                        "Live for later OpModes this session. Paste into source to keep.");
                 telemetry.addLine("Expect lateralKS ≫ axial kS; kV/kA often only modestly higher.");
             }
             telemetry.update();
