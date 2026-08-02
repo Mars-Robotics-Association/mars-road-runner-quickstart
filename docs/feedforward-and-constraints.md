@@ -111,20 +111,22 @@ single-feedforward behavior.
 ### Tuning procedure — automatic (`LateralFeedforwardTuner`)
 
 Run the **`LateralFeedforwardTuner`** OpMode (mecanum only; registered by `TuningOpModes`).
-It is the strafe counterpart of `AxialFeedforwardTuner` (see the section below): it drives an
-open-loop square wave sideways (left/right reversals) and fits all three lateral constants —
-including `lateralKA` — at once via the integral method. Wheel velocity is taken from the
-localizer's lateral chassis velocity times the drive's `lateralMultiplier`.
+It is the strafe counterpart of `AxialFeedforwardTuner` (see the section below): same ramp +
+reverse procedure applied as a pure strafe for `lateralKS`/`lateralKV`/`lateralKA`. Wheel
+velocity is the localizer's lateral chassis velocity times the drive's `lateralMultiplier`.
 
 1. Run `AxialFeedforwardTuner` to get `kS`/`kV`/`kA` (the **axial** constants).
-2. Clear a sideways lane of a few feet on both sides and run `LateralFeedforwardTuner`.
+2. Run `LateralFeedforwardTuner`. It **ramps LEFT** (robot +y) first; a wall on the robot's
+   left is OK. Leave room on the right for the reverse phase.
 3. Paste the printed `lateralKS` / `lateralKV` / `lateralKA` into `Params` and set
    `useAnisotropicFeedforward = true`.
 
-Expect all three lateral constants to be noticeably larger than their axial counterparts.
-Rotation is assigned the axial constants (each wheel rolls in its drive direction during
-a turn). If the OpMode reports the fit was singular, the strafe didn't excite all terms —
-raise `MAX_POWER`/`CYCLES` or shorten `HALF_CYCLE` and retry.
+Expect **lateral kS** to be clearly larger than axial (often ~1.5–2×) — roller scrub is
+mostly extra static/coulomb friction. **lateral kV / kA** are often only modestly higher
+(or close to axial): once sliding, viscous loss and effective inertia need not double.
+If lateral kS ≈ axial kS, re-check the strafe fit; if lateral kV is *much* larger than
+axial with a poor ramp R², suspect localization scale or a stuck/slow ramp. Rotation
+uses the axial constants (each wheel rolls in its drive direction during a turn).
 
 ## Bonus: automatic axial kS / kV / **kA** (`AxialFeedforwardTuner`)
 
@@ -135,20 +137,22 @@ eyeballing a target-vs-actual velocity graph.
 **Why kA can't be read off a ramp.** On a slow ramp, acceleration is nearly proportional to
 velocity, so the `kA·a` term is collinear with `kV·v` and no regression can separate them. kA
 becomes identifiable only when the maneuver contains **reversals** that decorrelate `a` from
-`v`. `AxialFeedforwardTuner` drives an open-loop square wave (alternating `±MAX_POWER`), which
-is rich in acceleration.
+`v`. `AxialFeedforwardTuner` therefore runs **two phases**:
 
-**How it fits without differentiating.** It fits the *integral* form of the model,
+1. **Slow forward ramp** (same idea as `ForwardRampLogger`) → `kS`, `kV` via
+   `V = kS + kV·v`, with a robust low-velocity cutoff. High-speed-only multi-level cruise
+   pins `kV` well but leaves the intercept poorly leveraged — a few percent slope error can
+   move `kS` by ~0.3 V (e.g. ramp `kS ≈ 1.07` vs cruise-only `kS ≈ 0.7`).
+2. **Reverse square wave** → residual `kA` via
+   `∫(V − kS·sign(v) − kV·v) dt = kA·Δv` (no noisy `dv/dt`).
 
-```
-∫V dt = kS·∫sign(v)dt + kV·∫v dt + kA·(v − v0)
-```
-
-so the kA term is an exact velocity difference — no noisy derivative — and integration smooths
-the data. One equation per sample gives a 3-parameter least-squares fit whose coefficients are
-kS, kV, kA (solved by `TunerRegression.solve3`). If the maneuver fails to excite all three
-terms the system is singular and the OpMode says so; raise `MAX_POWER`/`CYCLES` or shorten
-`HALF_CYCLE` and retry.
+Defaults: ramp `0.1` power/s to `0.9`, then `KA_POWER = 0.6` for 4 reverse half-cycles.
+The ramp ends early if velocity collapses under power (e.g. hits a wall). Phase 2 starts
+reverse and, when the localizer measured enough ramp travel (start → wall), each half-cycle
+runs across that corridor (minus `END_MARGIN_IN`) instead of a fixed 1 s — so the kA phase
+uses the free space the robot just drove. Short ramps fall back to timed `HALF_CYCLE` holds.
+Localization must be sign-correct (forward → +x). Dashboard knobs: `STALL_*`, `MOVING_SPEED`,
+`MIN_RAMP_TICKS_PER_SEC`, `END_MARGIN_IN`, `MIN_TRAVEL_IN`.
 
 Velocity comes from the localizer (drive-motor encoders are often unwired). Sanity-check the
 reported kS/kV against your ramp values and use the reported kA in place of the hand-matched

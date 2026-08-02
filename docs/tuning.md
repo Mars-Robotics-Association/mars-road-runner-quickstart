@@ -23,10 +23,12 @@ automated (they measure physical geometry or require human observation).
 
 Notes on the flow:
 
-- **Step 4 replaces `ForwardRampLogger` + `ManualFeedforwardTuner`.** The reversal-based
-  fit identifies all three constants at once — including `kA`, which the stock procedure
-  leaves to eyeballing a velocity graph. The stock OpModes are still registered if you
-  want to cross-check the fit.
+- **Step 4 replaces `ForwardRampLogger` + `ManualFeedforwardTuner`.** A slow open-loop ramp
+  fits `kS`/`kV` (same model as `ForwardRampLogger`), then a reverse square wave fits residual
+  `kA`. The ramp stops early if the robot is no longer moving under power (wall contact); the
+  reverse phase then uses the measured start→wall distance as its corridor (not a fixed 1 s
+  per half-cycle). Stock OpModes remain for cross-check; `kS`/`kV` should match the ramp
+  closely. Localization must already be sign-correct (forward → +x).
 - **Step 5** spins the robot through the tuned feedforward and corrects `trackWidthTicks`
   from the commanded-vs-actual yaw rate (measured by the hub IMU, so it works with any
   localizer). It runs *after* step 4 because the spin is driven through `kS`/`kV`. On
