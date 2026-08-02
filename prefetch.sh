@@ -4,13 +4,13 @@
 #
 # Run this while you have a network connection. It does three things:
 #   1. Ensure submodule sources match the pins in the parent *index* (committed
-#      or staged-but-uncommitted). Unstaged pin drift fails fast - never reset
+#      or staged-but-uncommitted). Unstaged pin drift fails fast — never reset
 #      or stage. Nested/missing checkouts are filled from those pins. Offline
 #      deploy has no network to fetch pins, so sources must be correct now.
-#   2. Online build of the TeamCode debug APK - pulls the Gradle distribution,
+#   2. Online build of the TeamCode debug APK — pulls the Gradle distribution,
 #      every dependency artifact, and any missing Android SDK build-tools into
 #      the local caches.
-#   3. Offline verification - `clean` then rebuild with `--offline`, forcing a
+#   3. Offline verification — `clean` then rebuild with `--offline`, forcing a
 #      full recompile/repackage using only what's now cached. If this succeeds,
 #      you have real assurance that a later offline `./deploy.sh` (which runs
 #      installDebug) won't need the network for dependencies.
@@ -133,11 +133,11 @@ echo "==> Verifying: clean + offline rebuild of $TASK (no network) ..."
 # offline run genuinely exercises the cached dependencies.
 if gw --offline clean "$TASK"; then
   echo
-  echo "OK: offline build succeeded. Dependencies are cached - you can install"
+  echo "OK: offline build succeeded. Dependencies are cached — you can install"
   echo "    offline with ./deploy.sh (or: ./gradlew --offline :TeamCode:installDebug)."
 else
   echo
-  echo "FAIL: offline build failed - something still needs the network." >&2
+  echo "FAIL: offline build failed — something still needs the network." >&2
   echo "      Re-run ./prefetch.sh while online to fetch the missing pieces." >&2
   exit 1
 fi
