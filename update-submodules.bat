@@ -158,7 +158,7 @@ if errorlevel 1 (
     exit /b 1
 )
 
-:: Parent-side update uses the *index* pin we just staged â€” ensures this path
+:: Parent-side update uses the *index* pin we just staged — ensures this path
 :: (and its nested submodules) really match that hash, not only the in-tree
 :: checkout that preceded the stage.
 echo Syncing parent view of !SUB_PATH! to the staged pin...
@@ -170,7 +170,7 @@ if errorlevel 1 (
 )
 
 :: Read pins from this directory (already cd'd to parent). Avoid git -C with a
-:: trailing-backslash path, and avoid parsing ls-files columns â€” rev-parse
+:: trailing-backslash path, and avoid parsing ls-files columns — rev-parse
 :: ":path" is the index object for that gitlink.
 set "HEAD_SHA="
 for /f "tokens=*" %%H in ('git -C "!SCRIPT_DIR!\!SUB_PATH!" rev-parse HEAD 2^>nul') do set "HEAD_SHA=%%H"

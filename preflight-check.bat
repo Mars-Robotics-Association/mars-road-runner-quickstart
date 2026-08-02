@@ -402,7 +402,7 @@ if "!NEED_GJF!"=="1" (
         if exist "!GJF_JAR!" (
             echo class _GjfProbe { void m^(^) { int x = 1; } } | java -jar "!GJF_JAR!" --aosp - >nul 2>&1
             if errorlevel 1 (
-                echo       [WARN] Downloaded jar still fails â€” need Java 17+ on PATH for the pre-commit hook
+                echo       [WARN] Downloaded jar still fails — need Java 17+ on PATH for the pre-commit hook
                 set /a WARNINGS+=1
             ) else (
                 echo       [OK]   Installed google-java-format !GJF_VERSION!

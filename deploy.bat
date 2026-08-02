@@ -7,7 +7,7 @@ setlocal EnableDelayedExpansion
 :: Wi-Fi as the hub sleeps or roams), it retries `adb connect` a few times before
 :: giving up. Once connected it runs the Gradle install of the TeamCode app.
 ::
-:: Connection: handled by ensure-robot-connected.bat â€” uses a USB device if present,
+:: Connection: handled by ensure-robot-connected.bat — uses a USB device if present,
 :: else connects to the Control Hub AP (192.168.43.1:5555 by default; override with
 :: ADB_HOST). Set ADB_SERIAL to target a specific device when several are attached.
 ::

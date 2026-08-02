@@ -56,7 +56,7 @@ set /a _ATTEMPT=1
 :connect_loop
 if !_ATTEMPT! gtr !ROBOT_CONNECT_RETRIES! goto :connect_failed
 
-echo adb: not connected â€” connect attempt !_ATTEMPT!/!ROBOT_CONNECT_RETRIES! to !ROBOT_HOST! ...
+echo adb: not connected — connect attempt !_ATTEMPT!/!ROBOT_CONNECT_RETRIES! to !ROBOT_HOST! ...
 :: Drop any stale offline entry before retrying.
 adb disconnect "!ROBOT_HOST!" >nul 2>&1
 adb connect "!ROBOT_HOST!" >nul 2>&1
