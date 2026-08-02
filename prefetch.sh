@@ -2,18 +2,22 @@
 #
 # Warm the Gradle/Android caches online so an offline install will work later.
 #
-# Run this while you have a network connection. It does two things:
-#   1. Online build of the TeamCode debug APK — pulls the Gradle distribution,
+# Run this while you have a network connection. It does three things:
+#   1. Ensure submodule sources match the pins in the parent *index* (committed
+#      or staged-but-uncommitted). Unstaged pin drift fails fast — never reset
+#      or stage. Nested/missing checkouts are filled from those pins. Offline
+#      deploy has no network to fetch pins, so sources must be correct now.
+#   2. Online build of the TeamCode debug APK — pulls the Gradle distribution,
 #      every dependency artifact, and any missing Android SDK build-tools into
 #      the local caches.
-#   2. Offline verification — `clean` then rebuild with `--offline`, forcing a
+#   3. Offline verification — `clean` then rebuild with `--offline`, forcing a
 #      full recompile/repackage using only what's now cached. If this succeeds,
 #      you have real assurance that a later offline `./deploy.sh` (which runs
 #      installDebug) won't need the network for dependencies.
 #
 # Usage:
-#   ./prefetch.sh              # warm caches, then verify the offline build
-#   ./prefetch.sh --no-verify  # warm caches only, skip the offline rebuild
+#   ./prefetch.sh              # ensure pins, warm caches, verify offline
+#   ./prefetch.sh --no-verify  # ensure pins + warm only; skip offline rebuild
 set -euo pipefail
 
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -28,6 +32,76 @@ for arg in "$@"; do
 done
 
 gw() { "$DIR/gradlew" -p "$DIR" "$@"; }
+
+echo "==> Ensuring submodules match parent index pins ..."
+# Fail-fast on top-level pin drift *before* submodule update. Update would
+# silently reset an unstaged intentional checkout back to the old index pin.
+# Intent is captured by update-submodules (stages the gitlink) or git add.
+sub_drift=0
+while read -r hash path _; do
+  [[ -z "${hash:-}" ]] && continue
+  flag="${hash:0:1}"
+  case "$flag" in
+    +)
+      echo "FAIL: $path is checked out at a different commit than the parent index pin." >&2
+      echo "      If this pin is intentional:  git add $path" >&2
+      echo "      (or re-run ./update-submodules.sh $path)" >&2
+      echo "      If not:                      git submodule update --init --recursive" >&2
+      sub_drift=1
+      ;;
+    U)
+      echo "FAIL: $path has unresolved merge conflicts." >&2
+      sub_drift=1
+      ;;
+  esac
+done < <(git -C "$DIR" submodule status 2>/dev/null || true)
+
+if [[ "$sub_drift" -ne 0 ]]; then
+  exit 1
+fi
+
+# Index pins only (staged uncommitted gitlinks count). Fills missing clones and
+# nested pins; does not rewrite a top-level HEAD that already matches the index.
+if ! git -C "$DIR" submodule update --init --recursive; then
+  echo "FAIL: could not check out submodules at the pins in the parent index." >&2
+  echo "      Fix network/auth, or clean dirty submodule trees, then retry." >&2
+  exit 1
+fi
+
+sub_bad=0
+while read -r hash path _; do
+  [[ -z "${hash:-}" ]] && continue
+  flag="${hash:0:1}"
+  case "$flag" in
+    -)
+      echo "FAIL: $path is not initialized." >&2
+      sub_bad=1
+      ;;
+    +)
+      echo "FAIL: $path is not at the commit recorded in its parent pin." >&2
+      sub_bad=1
+      ;;
+    U)
+      echo "FAIL: $path has unresolved merge conflicts." >&2
+      sub_bad=1
+      ;;
+  esac
+done < <(git -C "$DIR" submodule status --recursive 2>/dev/null || true)
+
+if [[ "$sub_bad" -ne 0 ]]; then
+  echo "       Run: git submodule update --init --recursive" >&2
+  exit 1
+fi
+
+# Dirty files on the correct commit still change what gets compiled into the
+# offline caches — refuse so the prefetched build matches the pins exactly.
+if ! git -C "$DIR" submodule foreach --recursive \
+    'git diff --quiet && git diff --cached --quiet' >/dev/null 2>&1; then
+  echo "FAIL: one or more submodules have uncommitted local changes." >&2
+  echo "      Commit, stash, or discard them so the prefetched build matches the pin." >&2
+  git -C "$DIR" submodule foreach --recursive 'git status -s' || true
+  exit 1
+fi
 
 echo "==> Warming caches with an online build of $TASK ..."
 # --refresh-dependencies makes Gradle re-resolve every dependency, so anything

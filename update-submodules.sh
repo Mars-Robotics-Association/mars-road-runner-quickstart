@@ -97,18 +97,39 @@ while true; do
 done
 
 SELECTED_TAG="${TAGS[$((CHOICE - 1))]}"
+TARGET_SHA="$(git rev-parse "tags/${SELECTED_TAG}^{commit}")"
+
 echo ""
-echo "Checking out tag: $SELECTED_TAG"
+echo "Checking out $SELECTED_TAG ($TARGET_SHA) ..."
+# --force resets the worktree to the tag so dirty files cannot leave sources
+# off the selected pin. Nested update --force does the same one level down.
+git checkout --force "$TARGET_SHA"
 
-git checkout "tags/$SELECTED_TAG" --quiet
-
-echo "Updating nested submodules..."
-git submodule update --init --recursive
+echo "Updating nested submodules to this pin's recorded hashes..."
+git submodule update --init --recursive --force
 cd "$SCRIPT_DIR"
 
 echo "Staging pointer update in parent repo..."
 git add "$SUB_PATH"
 
+# Parent-side update uses the *index* pin we just staged — ensures this path
+# (and its nested submodules) really match that hash, not only the in-tree
+# checkout that preceded the stage.
+echo "Syncing parent view of $SUB_PATH to the staged pin..."
+git submodule update --init --recursive --force -- "$SUB_PATH"
+
+HEAD_SHA="$(git -C "$SCRIPT_DIR/$SUB_PATH" rev-parse HEAD)"
+INDEX_SHA="$(git -C "$SCRIPT_DIR" ls-files -s -- "$SUB_PATH" | awk '{print $2; exit}')"
+if [[ "$HEAD_SHA" != "$TARGET_SHA" ]]; then
+    echo "ERROR: $SUB_PATH HEAD is $HEAD_SHA, expected $TARGET_SHA." >&2
+    exit 1
+fi
+if [[ "$INDEX_SHA" != "$TARGET_SHA" ]]; then
+    echo "ERROR: parent index pin for $SUB_PATH is $INDEX_SHA, expected $TARGET_SHA." >&2
+    exit 1
+fi
+
 echo ""
-echo "$SUB_PATH updated to $SELECTED_TAG."
-echo "The submodule pointer is staged -- review and commit when ready."
+echo "$SUB_PATH is at $SELECTED_TAG ($TARGET_SHA)."
+echo "Worktree and nested submodules match that hash; parent pointer is staged."
+echo "Review and commit when ready."

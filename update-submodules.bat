@@ -2,10 +2,11 @@
 setlocal EnableDelayedExpansion
 
 set "SCRIPT_DIR=%~dp0"
+if "!SCRIPT_DIR:~-1!"=="\" set "SCRIPT_DIR=!SCRIPT_DIR:~0,-1!"
 
 :: Collect submodule paths from .gitmodules
 set SUB_COUNT=0
-for /f "tokens=*" %%P in ('git config --file "%SCRIPT_DIR%.gitmodules" --get-regexp "submodule\..*.path"') do (
+for /f "tokens=*" %%P in ('git config --file "!SCRIPT_DIR!\.gitmodules" --get-regexp "submodule\..*.path"') do (
     for /f "tokens=2" %%V in ("%%P") do (
         set /a SUB_COUNT+=1
         set SUBMODULE[!SUB_COUNT!]=%%V
@@ -65,7 +66,7 @@ goto prompt_submodule
 
 echo.
 echo Fetching tags from %SUB_PATH%...
-cd /d "%SCRIPT_DIR%%SUB_PATH%"
+cd /d "!SCRIPT_DIR!\!SUB_PATH!"
 git fetch --prune --force --quiet origin "+refs/tags/*:refs/tags/*"
 if errorlevel 1 (
     echo ERROR: Failed to fetch tags from remote "origin".
@@ -119,31 +120,77 @@ if %CHOICE_NUM% lss 1 goto invalid
 if %CHOICE_NUM% gtr %COUNT% goto invalid
 
 set SELECTED_TAG=!TAG[%CHOICE_NUM%]!
+set "TARGET_SHA="
+:: rev-list -n 1 peels annotated tags to the commit without bat caret-escaping pain.
+for /f "tokens=*" %%H in ('git rev-list -n 1 "tags/!SELECTED_TAG!" 2^>nul') do set "TARGET_SHA=%%H"
+if "!TARGET_SHA!"=="" (
+    echo ERROR: Could not resolve tag !SELECTED_TAG! to a commit.
+    pause
+    exit /b 1
+)
+
 echo.
-echo Checking out tag: %SELECTED_TAG%
-
-git checkout "tags/%SELECTED_TAG%" --quiet
+echo Checking out !SELECTED_TAG! ^(!TARGET_SHA!^) ...
+:: --force resets the worktree to the tag so dirty files cannot leave sources
+:: off the selected pin. Nested update --force does the same one level down.
+git checkout --force "!TARGET_SHA!"
 if errorlevel 1 (
-    echo ERROR: Failed to checkout tag %SELECTED_TAG%.
+    echo ERROR: Failed to checkout !SELECTED_TAG! ^(!TARGET_SHA!^).
     pause
     exit /b 1
 )
 
-echo Updating nested submodules...
-git submodule update --init --recursive
+echo Updating nested submodules to this pin's recorded hashes...
+git submodule update --init --recursive --force
 if errorlevel 1 (
-    echo ERROR: Submodule update failed.
+    echo ERROR: Nested submodule update failed.
     pause
     exit /b 1
 )
-cd /d "%SCRIPT_DIR%"
+
+cd /d "!SCRIPT_DIR!"
 
 echo Staging pointer update in parent repo...
-git add "%SUB_PATH%"
+git add "!SUB_PATH!"
+if errorlevel 1 (
+    echo ERROR: Failed to stage !SUB_PATH! in the parent repo.
+    pause
+    exit /b 1
+)
+
+:: Parent-side update uses the *index* pin we just staged — ensures this path
+:: (and its nested submodules) really match that hash, not only the in-tree
+:: checkout that preceded the stage.
+echo Syncing parent view of !SUB_PATH! to the staged pin...
+git submodule update --init --recursive --force -- "!SUB_PATH!"
+if errorlevel 1 (
+    echo ERROR: Parent submodule update for !SUB_PATH! failed.
+    pause
+    exit /b 1
+)
+
+:: Read pins from this directory (already cd'd to parent). Avoid git -C with a
+:: trailing-backslash path, and avoid parsing ls-files columns — rev-parse
+:: ":path" is the index object for that gitlink.
+set "HEAD_SHA="
+for /f "tokens=*" %%H in ('git -C "!SCRIPT_DIR!\!SUB_PATH!" rev-parse HEAD 2^>nul') do set "HEAD_SHA=%%H"
+set "INDEX_SHA="
+for /f "tokens=*" %%H in ('git rev-parse ":!SUB_PATH!" 2^>nul') do set "INDEX_SHA=%%H"
+if /i not "!HEAD_SHA!"=="!TARGET_SHA!" (
+    echo ERROR: !SUB_PATH! HEAD is !HEAD_SHA!, expected !TARGET_SHA!.
+    pause
+    exit /b 1
+)
+if /i not "!INDEX_SHA!"=="!TARGET_SHA!" (
+    echo ERROR: parent index pin for !SUB_PATH! is !INDEX_SHA!, expected !TARGET_SHA!.
+    pause
+    exit /b 1
+)
 
 echo.
-echo %SUB_PATH% updated to %SELECTED_TAG%.
-echo The submodule pointer is staged -- review and commit when ready.
+echo %SUB_PATH% is at !SELECTED_TAG! ^(!TARGET_SHA!^).
+echo Worktree and nested submodules match that hash; parent pointer is staged.
+echo Review and commit when ready.
 pause
 exit /b 0
 
