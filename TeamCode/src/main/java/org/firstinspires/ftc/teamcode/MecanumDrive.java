@@ -351,6 +351,8 @@ public final class MecanumDrive {
 
         voltageSensor = hardwareMap.voltageSensor.iterator().next();
 
+        // Pinpoint: pass PARAMS.inPerTick (pod scale; 48mm/2000 default above).
+        // OTOS: localizer = new OTOSLocalizer(hardwareMap, pose); and set PARAMS.inPerTick = 1.0
         localizer = new DriveLocalizer(pose);
 
         FlightRecorder.write("MECANUM_PARAMS", PARAMS);
