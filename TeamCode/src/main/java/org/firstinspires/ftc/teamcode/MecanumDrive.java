@@ -30,7 +30,6 @@ import com.acmerobotics.roadrunner.ftc.LynxFirmware;
 import com.acmerobotics.roadrunner.ftc.OverflowEncoder;
 import com.acmerobotics.roadrunner.ftc.PositionVelocityPair;
 import com.acmerobotics.roadrunner.ftc.RawEncoder;
-import com.qualcomm.hardware.lynx.LynxModule;
 import com.qualcomm.hardware.rev.RevHubOrientationOnRobot;
 import com.qualcomm.robotcore.hardware.DcMotor;
 import com.qualcomm.robotcore.hardware.DcMotorEx;
@@ -44,10 +43,12 @@ import org.firstinspires.ftc.teamcode.messages.DriveCommandMessage;
 import org.firstinspires.ftc.teamcode.messages.MecanumCommandMessage;
 import org.firstinspires.ftc.teamcode.messages.MecanumLocalizerInputsMessage;
 import org.firstinspires.ftc.teamcode.messages.PoseMessage;
+import org.firstinspires.ftc.teamcode.opmodes.base.MarsLinearOpMode;
 
 import java.util.ArrayList;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.function.DoubleSupplier;
 
 @Config
 public final class MecanumDrive {
@@ -191,6 +192,13 @@ public final class MecanumDrive {
 
     public final VoltageSensor voltageSensor;
 
+    /**
+     * Battery voltage (volts) for feedforward compensation. Defaults to {@link
+     * VoltageSensor#getVoltage()} on the hub sensor; OpModes that cache battery once per loop can
+     * pass a custom supplier (e.g. {@link MarsLinearOpMode#batteryVoltage}).
+     */
+    private final DoubleSupplier voltageGetter;
+
     public final LazyImu lazyImu;
 
     public final Localizer localizer;
@@ -316,12 +324,20 @@ public final class MecanumDrive {
         }
     }
 
+    /** Uses the hub {@link VoltageSensor} for each feedforward voltage sample. */
     public MecanumDrive(HardwareMap hardwareMap, Pose2d pose) {
+        this(hardwareMap, pose, null);
+    }
+
+    /**
+     * @param voltageGetter battery volts for FF compensation; {@code null} uses {@link
+     *     VoltageSensor#getVoltage()} on the drive's hub sensor each time
+     */
+    public MecanumDrive(HardwareMap hardwareMap, Pose2d pose, DoubleSupplier voltageGetter) {
         LynxFirmware.throwIfModulesAreOutdated(hardwareMap);
 
-        for (LynxModule module : hardwareMap.getAll(LynxModule.class)) {
-            module.setBulkCachingMode(LynxModule.BulkCachingMode.AUTO);
-        }
+        // Bulk caching is owned by the OpMode (e.g. BulkReads / MarsLinearOpMode.nextFrame),
+        // not the drive — do not set AUTO here or it will undo MANUAL bulk mode.
 
         // TODO: make sure your config has motors with these names (or change them)
         //   see
@@ -350,12 +366,18 @@ public final class MecanumDrive {
                                 PARAMS.logoFacingDirection, PARAMS.usbFacingDirection));
 
         voltageSensor = hardwareMap.voltageSensor.iterator().next();
+        this.voltageGetter = voltageGetter != null ? voltageGetter : voltageSensor::getVoltage;
 
         // Pinpoint: pass PARAMS.inPerTick (pod scale; 48mm/2000 default above).
         // OTOS: localizer = new OTOSLocalizer(hardwareMap, pose); and set PARAMS.inPerTick = 1.0
         localizer = new DriveLocalizer(pose);
 
         FlightRecorder.write("MECANUM_PARAMS", PARAMS);
+    }
+
+    /** Battery voltage used for feedforward power scaling (via the construction-time getter). */
+    public double getBatteryVoltage() {
+        return voltageGetter.getAsDouble();
     }
 
     public void setDrivePowers(PoseVelocity2d powers) {
@@ -381,7 +403,7 @@ public final class MecanumDrive {
      */
     public void setDriveCommand(PoseVelocity2dDual<Time> command) {
         MecanumKinematics.WheelVelocities<Time> wheelVels = kinematics.inverse(command);
-        double voltage = voltageSensor.getVoltage();
+        double voltage = getBatteryVoltage();
 
         // Base feedforward voltage per wheel. With useAnisotropicFeedforward, each wheel's strafe
         // (lateral) velocity component is fed the separately-calibrated lateral constants;
@@ -584,7 +606,7 @@ public final class MecanumDrive {
             driveCommandWriter.write(new DriveCommandMessage(command));
 
             MecanumKinematics.WheelVelocities<Time> wheelVels = kinematics.inverse(command);
-            double voltage = voltageSensor.getVoltage();
+            double voltage = getBatteryVoltage();
             final MotorFeedforward feedforward =
                     new MotorFeedforward(
                             PARAMS.kS, PARAMS.kV / PARAMS.inPerTick, PARAMS.kA / PARAMS.inPerTick);

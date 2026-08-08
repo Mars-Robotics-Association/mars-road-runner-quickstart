@@ -42,7 +42,6 @@ import com.acmerobotics.roadrunner.ftc.LynxFirmware;
 import com.acmerobotics.roadrunner.ftc.OverflowEncoder;
 import com.acmerobotics.roadrunner.ftc.PositionVelocityPair;
 import com.acmerobotics.roadrunner.ftc.RawEncoder;
-import com.qualcomm.hardware.lynx.LynxModule;
 import com.qualcomm.hardware.rev.RevHubOrientationOnRobot;
 import com.qualcomm.robotcore.hardware.DcMotor;
 import com.qualcomm.robotcore.hardware.DcMotorEx;
@@ -59,6 +58,7 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.function.DoubleSupplier;
 
 @Config
 public final class TankDrive {
@@ -174,6 +174,12 @@ public final class TankDrive {
     public final LazyImu lazyImu;
 
     public final VoltageSensor voltageSensor;
+
+    /**
+     * Battery voltage (volts) for feedforward compensation. Defaults to {@link
+     * VoltageSensor#getVoltage()}; OpModes may pass a once-per-frame supplier.
+     */
+    private final DoubleSupplier voltageGetter;
 
     public final Localizer localizer;
     private final LinkedList<Pose2d> poseHistory = new LinkedList<>();
@@ -292,12 +298,19 @@ public final class TankDrive {
         }
     }
 
+    /** Uses the hub {@link VoltageSensor} for each feedforward voltage sample. */
     public TankDrive(HardwareMap hardwareMap, Pose2d pose) {
+        this(hardwareMap, pose, null);
+    }
+
+    /**
+     * @param voltageGetter battery volts for FF compensation; {@code null} uses {@link
+     *     VoltageSensor#getVoltage()} on the drive's hub sensor each time
+     */
+    public TankDrive(HardwareMap hardwareMap, Pose2d pose, DoubleSupplier voltageGetter) {
         LynxFirmware.throwIfModulesAreOutdated(hardwareMap);
 
-        for (LynxModule module : hardwareMap.getAll(LynxModule.class)) {
-            module.setBulkCachingMode(LynxModule.BulkCachingMode.AUTO);
-        }
+        // Bulk caching is owned by the OpMode (e.g. BulkReads), not the drive.
 
         // TODO: make sure your config has motors with these names (or change them)
         //   add additional motors on each side if you have them
@@ -327,6 +340,7 @@ public final class TankDrive {
                                 PARAMS.logoFacingDirection, PARAMS.usbFacingDirection));
 
         voltageSensor = hardwareMap.voltageSensor.iterator().next();
+        this.voltageGetter = voltageGetter != null ? voltageGetter : voltageSensor::getVoltage;
 
         // Drive encoders (default). When switching localizers, also set PARAMS.inPerTick:
         //   Pinpoint: new PinpointLocalizer(hardwareMap, PARAMS.inPerTick, pose)
@@ -335,6 +349,11 @@ public final class TankDrive {
         localizer = new DriveLocalizer(pose);
 
         FlightRecorder.write("TANK_PARAMS", PARAMS);
+    }
+
+    /** Battery voltage used for feedforward power scaling (via the construction-time getter). */
+    public double getBatteryVoltage() {
+        return voltageGetter.getAsDouble();
     }
 
     public void setDrivePowers(PoseVelocity2d powers) {
@@ -362,7 +381,7 @@ public final class TankDrive {
      */
     public void setDriveCommand(PoseVelocity2dDual<Time> command) {
         TankKinematics.WheelVelocities<Time> wheelVels = kinematics.inverse(command);
-        double voltage = voltageSensor.getVoltage();
+        double voltage = getBatteryVoltage();
         final MotorFeedforward feedforward =
                 new MotorFeedforward(
                         PARAMS.kS, PARAMS.kV / PARAMS.inPerTick, PARAMS.kA / PARAMS.inPerTick);
@@ -540,7 +559,7 @@ public final class TankDrive {
             driveCommandWriter.write(new DriveCommandMessage(command));
 
             TankKinematics.WheelVelocities<Time> wheelVels = kinematics.inverse(command);
-            double voltage = voltageSensor.getVoltage();
+            double voltage = getBatteryVoltage();
             final MotorFeedforward feedforward =
                     new MotorFeedforward(
                             PARAMS.kS, PARAMS.kV / PARAMS.inPerTick, PARAMS.kA / PARAMS.inPerTick);

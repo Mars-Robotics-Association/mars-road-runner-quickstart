@@ -1,15 +1,13 @@
 package org.firstinspires.ftc.teamcode.opmodes.tuning;
 
 import com.acmerobotics.dashboard.config.Config;
-import com.acmerobotics.dashboard.telemetry.MultipleTelemetry;
 import com.qualcomm.hardware.lynx.LynxModule;
-import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
 import com.qualcomm.robotcore.hardware.DcMotorEx;
 
 import org.firstinspires.ftc.robotcore.external.navigation.VoltageUnit;
+import org.firstinspires.ftc.teamcode.opmodes.base.MarsLinearOpMode;
 import org.firstinspires.ftc.teamcode.robot.BulkReads;
-import org.firstinspires.ftc.teamcode.utils.DashboardTelemetryPacketAccess;
 import org.firstinspires.ftc.teamcode.utils.HubHelper;
 
 import java.util.ArrayList;
@@ -17,88 +15,97 @@ import java.util.ArrayList;
 /**
  * Automated feedforward tuner for a single arm using ArmFeedforward (WPILib port).
  *
- * <p>Produces kS, kG, kV, kA in the units ArmFeedforward expects:
- * V, V, V·s/rad, V·s²/rad.
+ * <p>Produces kS, kG, kV, kA in the units ArmFeedforward expects: V, V, V·s/rad, V·s²/rad.
  *
- * <p>The sin/cos dual-regressor model
- * {@code V = kS·sign(ω) + c1·cos(θ) + c2·sin(θ) + kV·ω}
- * absorbs both encoder-zero offset and any CM angular offset (L-shaped arm, offset
- * attachment), so the encoder does not need to be zeroed at horizontal.
- * After regression: {@code kG = sqrt(c1²+c2²)},
+ * <p>The sin/cos dual-regressor model {@code V = kS·sign(ω) + c1·cos(θ) + c2·sin(θ) + kV·ω} absorbs
+ * both encoder-zero offset and any CM angular offset (L-shaped arm, offset attachment), so the
+ * encoder does not need to be zeroed at horizontal. After regression: {@code kG = sqrt(c1²+c2²)},
  * {@code φ = atan2(-c2, c1)} = angle where arm is horizontal in encoder ticks.
  *
  * <p>Procedure:
+ *
  * <ol>
- *   <li>Position arm at one end of its range, press Start, then press A.</li>
- *   <li>Quasistatic forward sweep: power ramps up slowly while recording samples.</li>
- *   <li>Move arm back toward start, press A.</li>
- *   <li>Quasistatic backward sweep: power ramps negative while recording samples.</li>
- *   <li>OLS regression yields kS, kG (=√(c1²+c2²)), kV, φ, and R².</li>
- *   <li>Step response (STEP_TRIALS trials): gravity-subtracted first-order fit → kA.</li>
- *   <li>Results displayed until OpMode is stopped.</li>
+ *   <li>Position arm at one end of its range, press Start, then press A.
+ *   <li>Quasistatic forward sweep: power ramps up slowly while recording samples.
+ *   <li>Move arm back toward start, press A.
+ *   <li>Quasistatic backward sweep: power ramps negative while recording samples.
+ *   <li>OLS regression yields kS, kG (=√(c1²+c2²)), kV, φ, and R².
+ *   <li>Step response (STEP_TRIALS trials): gravity-subtracted first-order fit → kA.
+ *   <li>Results displayed until OpMode is stopped.
  * </ol>
  */
 @Config
 @TeleOp(name = "ArmFeedforwardTuning", group = "Tuning")
-public class ArmFeedforwardTuning extends LinearOpMode {
+public class ArmFeedforwardTuning extends MarsLinearOpMode {
 
     // ── Config constants ──────────────────────────────────────────────────────
     public static class Params {
         /** Hardware map name of the arm motor. */
-        public String MOTOR_NAME          = "arm";
+        public String MOTOR_NAME = "arm";
+
         /**
-         * Encoder ticks for one full arm revolution (geared).
-         * = motor_encoder_ppr × external_gear_ratio.
-         * Incorrect value shifts kV/kA but does not affect kS or kG.
+         * Encoder ticks for one full arm revolution (geared). = motor_encoder_ppr ×
+         * external_gear_ratio. Incorrect value shifts kV/kA but does not affect kS or kG.
          */
-        public double TICKS_PER_ARM_REV   = 537.7;
+        public double TICKS_PER_ARM_REV = 537.7;
+
         /** Stop forward sweep at this many encoder ticks past the zeroed start position. */
-        public int    SOFT_LIMIT_FWD      = 2000;
+        public int SOFT_LIMIT_FWD = 2000;
+
         /** Stop backward sweep at this encoder tick offset (0 = back to start). */
-        public int    SOFT_LIMIT_BACK     = 0;
+        public int SOFT_LIMIT_BACK = 0;
+
         /** Power ramp rate during quasistatic sweeps, in power/second. */
-        public double QUASISTATIC_RAMP    = 0.03;
+        public double QUASISTATIC_RAMP = 0.03;
+
         /** Minimum arm angular velocity in rad/s; slower samples are ignored. */
-        public double MIN_VELOCITY_RAD    = 0.05;
+        public double MIN_VELOCITY_RAD = 0.05;
+
         /** Fraction of battery voltage applied during step response trials. */
-        public double STEP_FRACTION       = 0.50;
+        public double STEP_FRACTION = 0.50;
+
         /** Number of step-response trials. */
-        public int    STEP_TRIALS         = 3;
+        public int STEP_TRIALS = 3;
+
         /** Maximum duration of each step-response trial in seconds. */
-        public double STEP_MAX_TIME_S     = 3.0;
+        public double STEP_MAX_TIME_S = 3.0;
+
         /** Arm is considered "at rest" when |velocity| < this threshold in ticks/s. */
         public double COAST_THRESHOLD_TPS = 20.0;
+
         /** Maximum time to wait for arm to come to rest before starting a step trial. */
-        public double COAST_TIMEOUT_S     = 8.0;
+        public double COAST_TIMEOUT_S = 8.0;
+
         /** Step-fit lower exclusion: skip points where ω/ω_∞ < this fraction. */
         public double OMEGA_LOWER_FRACTION = 0.05;
+
         /** Step-fit upper exclusion: skip points where ω/ω_∞ > this fraction. */
         public double OMEGA_UPPER_FRACTION = 0.95;
     }
+
     public static Params PARAMS = new Params();
 
     // ── Online normal-equation accumulators ───────────────────────────────────
     // Model: V = kS·sign(ω) + c1·cos(θ) + c2·sin(θ) + kV·ω
     // Feature vector x = [sign(ω), cos(θ), sin(θ), ω], indices 0–3.
     private final double[][] XtX = new double[4][4];
-    private final double[]   XtY = new double[4];
-    private double qsSumY  = 0;
+    private final double[] XtY = new double[4];
+    private double qsSumY = 0;
     private double qsSumY2 = 0;
-    private int    qsN     = 0;
+    private int qsN = 0;
     private BulkReads bulkReads;
 
     @Override
     public void runOpMode() throws InterruptedException {
+        initRobot();
+        bulkReads = bulk;
+
         // ── Hardware init ────────────────────────────────────────────────────
         DcMotorEx motor = hardwareMap.get(DcMotorEx.class, PARAMS.MOTOR_NAME);
         motor.setMode(DcMotorEx.RunMode.RUN_WITHOUT_ENCODER);
         motor.setZeroPowerBehavior(DcMotorEx.ZeroPowerBehavior.BRAKE);
 
-        var packetAccess = new DashboardTelemetryPacketAccess();
-        telemetry = new MultipleTelemetry(telemetry, packetAccess.dashboardTelemetry);
-
         LynxModule hub = HubHelper.getHubForMotor(motor, hardwareMap);
-        bulkReads = new BulkReads(hardwareMap);
 
         double ticksToRad = 2.0 * Math.PI / PARAMS.TICKS_PER_ARM_REV;
 
@@ -109,21 +116,27 @@ public class ArmFeedforwardTuning extends LinearOpMode {
         if (isStopRequested()) return;
 
         // ── Phase 1: Quasistatic forward sweep ───────────────────────────────
-        if (!waitForA("Phase 1/5 – Move arm to one end of range, then press A to begin forward sweep.")) return;
+        if (!waitForA(
+                "Phase 1/5 – Move arm to one end of range, then press A to begin forward sweep."))
+            return;
 
         int tickOffset = motor.getCurrentPosition();
-        int samples1 = runQuasistaticSweep(motor, hub, ticksToRad, tickOffset,
-                true, "1/5 – Forward sweep");
+        int samples1 =
+                runQuasistaticSweep(
+                        motor, hub, ticksToRad, tickOffset, true, "1/5 – Forward sweep");
         motor.setPower(0);
         if (!opModeIsActive()) return;
 
         // ── Phase 2: Quasistatic backward sweep ──────────────────────────────
-        if (!waitForA(String.format(
-                "Phase 2/5 – Forward sweep done (%d samples). Move arm back, then press A for reverse sweep.",
-                samples1))) return;
+        if (!waitForA(
+                String.format(
+                        "Phase 2/5 – Forward sweep done (%d samples). Move arm back, then press A"
+                                + " for reverse sweep.",
+                        samples1))) return;
 
-        int samples2 = runQuasistaticSweep(motor, hub, ticksToRad, tickOffset,
-                false, "2/5 – Reverse sweep");
+        int samples2 =
+                runQuasistaticSweep(
+                        motor, hub, ticksToRad, tickOffset, false, "2/5 – Reverse sweep");
         motor.setPower(0);
         if (!opModeIsActive()) return;
 
@@ -160,7 +173,7 @@ public class ArmFeedforwardTuning extends LinearOpMode {
         }
 
         // ── Phase 4: Step response for kA ────────────────────────────────────
-        var tauList    = new ArrayList<Double>();
+        var tauList = new ArrayList<Double>();
         var stepR2List = new ArrayList<Double>();
 
         if (beta != null && kV > 0) {
@@ -171,9 +184,11 @@ public class ArmFeedforwardTuning extends LinearOpMode {
                 while (opModeIsActive()) {
                     bulkReads.readAll();
                     double velTps = Math.abs(motor.getVelocity());
-                    telemetry.addData("Phase",
+                    telemetry.addData(
+                            "Phase",
                             "4/5 – Step response: coasting to rest (trial %d/%d)",
-                            trial + 1, PARAMS.STEP_TRIALS);
+                            trial + 1,
+                            PARAMS.STEP_TRIALS);
                     telemetry.addData("Velocity (tps)", "%.1f", velTps);
                     telemetry.update();
                     if (velTps < PARAMS.COAST_THRESHOLD_TPS) break;
@@ -182,22 +197,29 @@ public class ArmFeedforwardTuning extends LinearOpMode {
                 if (!opModeIsActive()) break;
 
                 // Prompt user to position arm near vertical (gravity ≈ 0 → best kA accuracy).
-                if (!waitForA(String.format(
-                        "Trial %d/%d – Position arm near vertical (gravity ≈ 0), then press A.",
-                        trial + 1, PARAMS.STEP_TRIALS))) return;
+                if (!waitForA(
+                        String.format(
+                                "Trial %d/%d – Position arm near vertical (gravity ≈ 0), then press"
+                                        + " A.",
+                                trial + 1, PARAMS.STEP_TRIALS))) return;
 
                 // Snapshot angle and battery voltage at step start.
                 double theta0 = (motor.getCurrentPosition() - tickOffset) * ticksToRad;
                 double battV0 = hub.getInputVoltage(VoltageUnit.VOLTS);
 
                 // Gravity-subtracted net voltage and predicted terminal velocity.
-                double vNet = PARAMS.STEP_FRACTION * battV0 - c1 * Math.cos(theta0) - c2 * Math.sin(theta0);
+                double vNet =
+                        PARAMS.STEP_FRACTION * battV0
+                                - c1 * Math.cos(theta0)
+                                - c2 * Math.sin(theta0);
                 double wInf = (vNet - kS) / kV;
 
                 if (wInf <= 0) {
-                    telemetry.addData("Phase",
+                    telemetry.addData(
+                            "Phase",
                             "Trial %d/%d – wInf ≤ 0 (arm orientation problem). Skipping.",
-                            trial + 1, PARAMS.STEP_TRIALS);
+                            trial + 1,
+                            PARAMS.STEP_TRIALS);
                     telemetry.update();
                     continue;
                 }
@@ -211,16 +233,19 @@ public class ArmFeedforwardTuning extends LinearOpMode {
 
                 while (opModeIsActive() && (getRuntime() - stepStart) < PARAMS.STEP_MAX_TIME_S) {
                     bulkReads.readAll();
-                    double t     = getRuntime() - stepStart;
+                    double t = getRuntime() - stepStart;
                     double omega = motor.getVelocity() * ticksToRad;
                     sampleT.add(t);
                     sampleW.add(omega);
 
-                    telemetry.addData("Phase",
-                            "4/5 – Step response: sampling (trial %d/%d)", trial + 1, PARAMS.STEP_TRIALS);
-                    telemetry.addData("Time",         "%.3f s", t);
-                    telemetry.addData("ω (rad/s)",    "%.3f",   omega);
-                    telemetry.addData("ω_∞ (rad/s)", "%.3f",   wInf);
+                    telemetry.addData(
+                            "Phase",
+                            "4/5 – Step response: sampling (trial %d/%d)",
+                            trial + 1,
+                            PARAMS.STEP_TRIALS);
+                    telemetry.addData("Time", "%.3f s", t);
+                    telemetry.addData("ω (rad/s)", "%.3f", omega);
+                    telemetry.addData("ω_∞ (rad/s)", "%.3f", wInf);
                     telemetry.update();
                 }
                 motor.setPower(0);
@@ -230,7 +255,8 @@ public class ArmFeedforwardTuning extends LinearOpMode {
                 var regY = new ArrayList<Double>();
                 for (int i = 0; i < sampleT.size(); i++) {
                     double ratio = sampleW.get(i) / wInf;
-                    if (ratio < PARAMS.OMEGA_LOWER_FRACTION || ratio > PARAMS.OMEGA_UPPER_FRACTION) continue;
+                    if (ratio < PARAMS.OMEGA_LOWER_FRACTION || ratio > PARAMS.OMEGA_UPPER_FRACTION)
+                        continue;
                     regT.add(sampleT.get(i));
                     regY.add(Math.log(1.0 - ratio));
                 }
@@ -255,45 +281,44 @@ public class ArmFeedforwardTuning extends LinearOpMode {
         motor.setPower(0);
 
         // Average τ across valid trials → kA.
-        int    validTrials = tauList.size();
-        double avgTau      = 0;
-        double avgStepR2   = 0;
-        for (double tau : tauList)     avgTau    += tau;
-        for (double r2  : stepR2List) avgStepR2 += r2;
+        int validTrials = tauList.size();
+        double avgTau = 0;
+        double avgStepR2 = 0;
+        for (double tau : tauList) avgTau += tau;
+        for (double r2 : stepR2List) avgStepR2 += r2;
         if (validTrials > 0) {
-            avgTau    /= validTrials;
+            avgTau /= validTrials;
             avgStepR2 /= validTrials;
         }
         double kA = (beta != null && validTrials > 0) ? avgTau * kV : 0;
 
         // ── Phase 5: Results display until stopped ────────────────────────────
-        while (opModeIsActive()) {
+        while (nextFrame()) {
             telemetry.addLine("── RESULTS ──");
             if (beta != null) {
-                telemetry.addData("kS",  "%.4f V",       kS);
-                telemetry.addData("kG",  "%.4f V",       kG);
-                telemetry.addData("kV",  "%.4f V·s/rad", kV);
-                if (validTrials > 0)
-                    telemetry.addData("kA", "%.4f V·s²/rad", kA);
-                else
-                    telemetry.addData("kA", "FAILED – no valid trials");
-                telemetry.addData("φ",   "%.1f°  (encoder zero offset from horizontal)", phiDeg);
-                telemetry.addData("R²",  "%.4f  (quasistatic fit)", rSquared);
-                telemetry.addData("samples",
-                        "%d fwd + %d rev = %d total", samples1, samples2, qsN);
+                telemetry.addData("kS", "%.4f V", kS);
+                telemetry.addData("kG", "%.4f V", kG);
+                telemetry.addData("kV", "%.4f V·s/rad", kV);
+                if (validTrials > 0) telemetry.addData("kA", "%.4f V·s²/rad", kA);
+                else telemetry.addData("kA", "FAILED – no valid trials");
+                telemetry.addData("φ", "%.1f°  (encoder zero offset from horizontal)", phiDeg);
+                telemetry.addData("R²", "%.4f  (quasistatic fit)", rSquared);
+                telemetry.addData("samples", "%d fwd + %d rev = %d total", samples1, samples2, qsN);
             } else {
-                telemetry.addData("Regression",
-                        "FAILED – insufficient samples (n=%d, need ≥ 5)", qsN);
+                telemetry.addData(
+                        "Regression", "FAILED – insufficient samples (n=%d, need ≥ 5)", qsN);
             }
 
             if (validTrials > 0) {
-                telemetry.addData("kA R²",        "%.4f  (step response fit, avg)", avgStepR2);
-                telemetry.addData("τ (avg)",       "%.4f s", avgTau);
+                telemetry.addData("kA R²", "%.4f  (step response fit, avg)", avgStepR2);
+                telemetry.addData("τ (avg)", "%.4f s", avgTau);
                 telemetry.addData("kA valid trials", "%d / %d", validTrials, PARAMS.STEP_TRIALS);
                 for (int i = 0; i < tauList.size(); i++) {
                     telemetry.addData(
                             String.format("  Trial %d", i + 1),
-                            "τ=%.4f s  R²=%.4f", tauList.get(i), stepR2List.get(i));
+                            "τ=%.4f s  R²=%.4f",
+                            tauList.get(i),
+                            stepR2List.get(i));
                 }
             }
 
@@ -305,41 +330,44 @@ public class ArmFeedforwardTuning extends LinearOpMode {
                 telemetry.addData("  kV =", "%.4f", kV);
                 telemetry.addData("  kA =", "%.4f", kA);
             }
-            telemetry.update();
         }
     }
 
     // ── Quasistatic sweep ─────────────────────────────────────────────────────
 
     /**
-     * Ramps motor power while recording (V_applied, θ, ω) samples into the
-     * online normal equations. Returns when a soft limit is hit or opMode ends.
+     * Ramps motor power while recording (V_applied, θ, ω) samples into the online normal equations.
+     * Returns when a soft limit is hit or opMode ends.
      *
      * @param forward true for positive power ramp (forward sweep), false for negative
      * @return number of samples recorded during this sweep
      */
-    private int runQuasistaticSweep(DcMotorEx motor, LynxModule hub,
-            double ticksToRad, int tickOffset,
-            boolean forward, String phaseLabel) {
-        int    count    = 0;
-        double power    = 0;
+    private int runQuasistaticSweep(
+            DcMotorEx motor,
+            LynxModule hub,
+            double ticksToRad,
+            int tickOffset,
+            boolean forward,
+            String phaseLabel) {
+        int count = 0;
+        double power = 0;
         double lastTime = getRuntime();
 
         while (opModeIsActive()) {
             bulkReads.readAll();
 
-            double now  = getRuntime();
-            double dt   = now - lastTime;
-            lastTime    = now;
+            double now = getRuntime();
+            double dt = now - lastTime;
+            lastTime = now;
 
             power += (forward ? 1.0 : -1.0) * PARAMS.QUASISTATIC_RAMP * dt;
             power = Math.max(-1.0, Math.min(1.0, power));
             motor.setPower(power);
 
-            int    ticks    = motor.getCurrentPosition();
-            double theta    = (ticks - tickOffset) * ticksToRad;
-            double omega    = motor.getVelocity() * ticksToRad;
-            double battV    = hub.getInputVoltage(VoltageUnit.VOLTS);
+            int ticks = motor.getCurrentPosition();
+            double theta = (ticks - tickOffset) * ticksToRad;
+            double omega = motor.getVelocity() * ticksToRad;
+            double battV = hub.getInputVoltage(VoltageUnit.VOLTS);
             double vApplied = power * battV;
 
             if (Math.abs(omega) > PARAMS.MIN_VELOCITY_RAD) {
@@ -347,17 +375,17 @@ public class ArmFeedforwardTuning extends LinearOpMode {
                 count++;
             }
 
-            telemetry.addData("Phase",          phaseLabel);
-            telemetry.addData("Power",          "%.4f",  power);
-            telemetry.addData("θ (rad)",        "%.3f",  theta);
-            telemetry.addData("ω (rad/s)",      "%.3f",  omega);
-            telemetry.addData("V applied (V)",  "%.3f",  vApplied);
-            telemetry.addData("Samples",        count);
+            telemetry.addData("Phase", phaseLabel);
+            telemetry.addData("Power", "%.4f", power);
+            telemetry.addData("θ (rad)", "%.3f", theta);
+            telemetry.addData("ω (rad/s)", "%.3f", omega);
+            telemetry.addData("V applied (V)", "%.3f", vApplied);
+            telemetry.addData("Samples", count);
             telemetry.update();
 
             int relTicks = ticks - tickOffset;
-            if (forward  && relTicks >= PARAMS.SOFT_LIMIT_FWD)  break;
-            if (!forward && relTicks <= PARAMS.SOFT_LIMIT_BACK)  break;
+            if (forward && relTicks >= PARAMS.SOFT_LIMIT_FWD) break;
+            if (!forward && relTicks <= PARAMS.SOFT_LIMIT_BACK) break;
         }
 
         return count;
@@ -371,7 +399,7 @@ public class ArmFeedforwardTuning extends LinearOpMode {
             for (int j = 0; j < 4; j++) XtX[i][j] += x[i] * x[j];
             XtY[i] += x[i] * vApplied;
         }
-        qsSumY  += vApplied;
+        qsSumY += vApplied;
         qsSumY2 += vApplied * vApplied;
         qsN++;
     }
@@ -391,9 +419,8 @@ public class ArmFeedforwardTuning extends LinearOpMode {
     // ── Gaussian elimination with partial pivoting (4×4) ─────────────────────
 
     /**
-     * Solves the 4×4 linear system A·x = b via Gaussian elimination with
-     * partial pivoting. A and b are modified in-place; pass copies if they
-     * need to be preserved.
+     * Solves the 4×4 linear system A·x = b via Gaussian elimination with partial pivoting. A and b
+     * are modified in-place; pass copies if they need to be preserved.
      *
      * @return solution vector, or null if A is (near-)singular
      */
@@ -406,8 +433,12 @@ public class ArmFeedforwardTuning extends LinearOpMode {
                 if (Math.abs(A[row][col]) > Math.abs(A[maxRow][col])) maxRow = row;
             }
             // Swap rows.
-            double[] tmpRow = A[col]; A[col] = A[maxRow]; A[maxRow] = tmpRow;
-            double   tmpB   = b[col]; b[col] = b[maxRow]; b[maxRow] = tmpB;
+            double[] tmpRow = A[col];
+            A[col] = A[maxRow];
+            A[maxRow] = tmpRow;
+            double tmpB = b[col];
+            b[col] = b[maxRow];
+            b[maxRow] = tmpB;
 
             if (Math.abs(A[col][col]) < 1e-12) return null; // singular
 
@@ -433,8 +464,7 @@ public class ArmFeedforwardTuning extends LinearOpMode {
     private static double quadForm(double[] v, double[][] M) {
         double result = 0;
         for (int i = 0; i < v.length; i++)
-            for (int j = 0; j < v.length; j++)
-                result += v[i] * M[i][j] * v[j];
+            for (int j = 0; j < v.length; j++) result += v[i] * M[i][j] * v[j];
         return result;
     }
 
@@ -451,8 +481,8 @@ public class ArmFeedforwardTuning extends LinearOpMode {
     private static LinRegResult linearRegression(double[] x, double[] y, int n) {
         double sumX = 0, sumY = 0, sumXY = 0, sumX2 = 0;
         for (int i = 0; i < n; i++) {
-            sumX  += x[i];
-            sumY  += y[i];
+            sumX += x[i];
+            sumY += y[i];
             sumXY += x[i] * y[i];
             sumX2 += x[i] * x[i];
         }
@@ -463,7 +493,7 @@ public class ArmFeedforwardTuning extends LinearOpMode {
             r.intercept = sumY / n;
             return r;
         }
-        r.slope     = (n * sumXY - sumX * sumY) / denom;
+        r.slope = (n * sumXY - sumX * sumY) / denom;
         r.intercept = (sumY - r.slope * sumX) / n;
 
         double meanY = sumY / n;

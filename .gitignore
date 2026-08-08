@@ -86,3 +86,10 @@ lint/tmp/
 
 .DS_Store
 /.idea
+
+# Local adb pull of Control Hub FIRST/ folder (use telemetry/pull.sh instead)
+/FIRST/
+
+# Uncompressed telemetry CSVs (pull.sh compresses to .csv.br)
+telemetry/*.csv
+

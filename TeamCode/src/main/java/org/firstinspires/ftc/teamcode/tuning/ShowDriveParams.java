@@ -1,8 +1,5 @@
 package org.firstinspires.ftc.teamcode.tuning;
 
-import com.acmerobotics.dashboard.FtcDashboard;
-import com.acmerobotics.dashboard.telemetry.MultipleTelemetry;
-import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 import com.qualcomm.robotcore.eventloop.opmode.Utility;
 
 import org.firstinspires.ftc.teamcode.MecanumDrive;
@@ -11,14 +8,15 @@ import org.firstinspires.ftc.teamcode.PinpointLocalizer;
 import org.firstinspires.ftc.teamcode.TankDrive;
 import org.firstinspires.ftc.teamcode.ThreeDeadWheelLocalizer;
 import org.firstinspires.ftc.teamcode.TwoDeadWheelLocalizer;
+import org.firstinspires.ftc.teamcode.opmodes.base.MarsLinearOpMode;
 
 /**
  * Read-only dump of the live drive / localizer {@code PARAMS} statics — one place to copy values
  * after chaining automatic tuners in a single RC process.
  *
- * <p>Does not touch hardware. Values are whatever is in memory now: source defaults after a cold
- * start, or session writes from the automatic tuners if you ran them without restarting. Paste into
- * the corresponding {@code Params} classes before restart or redeploy to keep them.
+ * <p>Does not need a drive instance. Values are whatever is in memory now: source defaults after a
+ * cold start, or session writes from the automatic tuners if you ran them without restarting. Paste
+ * into the corresponding {@code Params} classes before restart or redeploy to keep them.
  *
  * <p>Registered under the Driver Station <b>Utility</b> menu (SDK 11.2+). Drive class follows
  * {@link TuningOpModes#DRIVE_CLASS}; localizer offsets for Pinpoint / dead wheels / OTOS are always
@@ -27,13 +25,13 @@ import org.firstinspires.ftc.teamcode.TwoDeadWheelLocalizer;
 @Utility(
         name = "Show Drive Params",
         description = "Dump live PARAMS statics for pasting into source after sysid")
-public final class ShowDriveParams extends LinearOpMode {
+public final class ShowDriveParams extends MarsLinearOpMode {
     @Override
     public void runOpMode() {
-        telemetry = new MultipleTelemetry(telemetry, FtcDashboard.getInstance().getTelemetry());
+        initRobot();
 
         waitForStart();
-        while (opModeIsActive()) {
+        while (nextFrame()) {
             telemetry.addLine("Live PARAMS (this RC process). Paste into source to keep.");
             telemetry.addLine("kV / kA shown as scientific notation for tick-unit pasting.");
             telemetry.addLine();
@@ -50,8 +48,6 @@ public final class ShowDriveParams extends LinearOpMode {
             telemetry.addLine();
             telemetry.addLine("--- Localizer offsets (always shown) ---");
             dumpLocalizers();
-
-            telemetry.update();
         }
     }
 

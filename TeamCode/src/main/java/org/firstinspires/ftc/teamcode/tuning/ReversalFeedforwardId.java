@@ -1,10 +1,11 @@
 package org.firstinspires.ftc.teamcode.tuning;
 
-import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 import com.qualcomm.robotcore.hardware.VoltageSensor;
 import com.qualcomm.robotcore.util.ElapsedTime;
 
 import org.firstinspires.ftc.robotcore.external.Telemetry;
+import org.firstinspires.ftc.teamcode.opmodes.base.MarsLinearOpMode;
+import org.firstinspires.ftc.teamcode.utils.CsvLogger;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -33,9 +34,38 @@ import java.util.function.DoubleSupplier;
  *
  * <p>Velocity is chassis axis speed in in/s from the localizer; axis position is inches along the
  * same axis. {@code power} and velocity must share a sign convention.
+ *
+ * <p>Optional {@link CsvLogger} sample logging (header {@link #SAMPLE_HEADER}): raw control-loop
+ * measurements during ramp and reverse so the id can be re-run offline. Callers open/close the
+ * logger and write a one-row meta file with run config ({@link #META_HEADER}) — not fitted
+ * constants (those are recomputed from samples).
  */
 public final class ReversalFeedforwardId {
     private ReversalFeedforwardId() {}
+
+    /**
+     * Per-loop raw measurements. {@code phase} is {@code ramp} or {@code reverse}; {@code half_idx}
+     * is {@code -1} on the ramp and 0-based on reverse half-cycles. Applied axis voltage is {@code
+     * power * battery_v}. {@code pose_in} is the localizer axis reading when available (NaN
+     * otherwise) — not the integrated ∫vel used for corridor logic.
+     */
+    public static final String SAMPLE_HEADER =
+            "t_s,phase,half_idx,power,battery_v,vel_in_s,pose_in";
+
+    /**
+     * One-row run config for offline re-fit (plant scale + OpMode knobs). Not fit results —
+     * recompute kS/kV/kA from the sample file.
+     */
+    public static final String META_HEADER =
+            "drive,axis,in_per_tick,ramp_power_per_sec,ramp_max,ka_power,half_cycle,ka_half_cycles,"
+                + "sign_deadband,stall_speed,stall_time,moving_speed,stall_min_power,stall_frac,"
+                + "min_ramp_ticks_per_sec,end_margin_in,min_travel_in,arm_travel_in,pos_stall_speed,"
+                + "ka_window_s,ka_stride_s";
+
+    /**
+     * Flush buffered sample rows after this many are queued (matches {@code FeedbackGainTuner}).
+     */
+    public static final int LOG_FLUSH_EVERY = 256;
 
     /** Window length (s) for residual kA integral equations. */
     public static final double DEFAULT_KA_WINDOW = 0.12;
@@ -150,7 +180,7 @@ public final class ReversalFeedforwardId {
      *     position-based half-cycles
      */
     public static Result identify(
-            LinearOpMode opMode,
+            MarsLinearOpMode opMode,
             Telemetry telemetry,
             DoubleConsumer setPower,
             DoubleSupplier wheelVel,
@@ -194,11 +224,12 @@ public final class ReversalFeedforwardId {
                 endMarginIn,
                 minTravelIn,
                 DEFAULT_ARM_TRAVEL_IN,
-                DEFAULT_POS_STALL_SPEED);
+                DEFAULT_POS_STALL_SPEED,
+                null);
     }
 
     public static Result identify(
-            LinearOpMode opMode,
+            MarsLinearOpMode opMode,
             Telemetry telemetry,
             DoubleConsumer setPower,
             DoubleSupplier wheelVel,
@@ -221,6 +252,63 @@ public final class ReversalFeedforwardId {
             double minTravelIn,
             double armTravelIn,
             double posStallSpeed) {
+        return identify(
+                opMode,
+                telemetry,
+                setPower,
+                wheelVel,
+                axisPos,
+                voltageSensor,
+                inPerTick,
+                rampPowerPerSec,
+                rampMax,
+                kaPower,
+                halfCycle,
+                halfCycles,
+                signDeadband,
+                stallSpeed,
+                stallTime,
+                movingSpeed,
+                stallMinPower,
+                stallFrac,
+                minRampTicksPerSec,
+                endMarginIn,
+                minTravelIn,
+                armTravelIn,
+                posStallSpeed,
+                null);
+    }
+
+    /**
+     * @param sampleLog optional per-loop sample logger ({@link #SAMPLE_HEADER}); null skips CSV
+     *     rows. Caller owns open/close and the meta file; this only appends raw sample rows and
+     *     flushes periodically.
+     */
+    public static Result identify(
+            MarsLinearOpMode opMode,
+            Telemetry telemetry,
+            DoubleConsumer setPower,
+            DoubleSupplier wheelVel,
+            DoubleSupplier axisPos,
+            VoltageSensor voltageSensor,
+            double inPerTick,
+            double rampPowerPerSec,
+            double rampMax,
+            double kaPower,
+            double halfCycle,
+            int halfCycles,
+            double signDeadband,
+            double stallSpeed,
+            double stallTime,
+            double movingSpeed,
+            double stallMinPower,
+            double stallFrac,
+            double minRampTicksPerSec,
+            double endMarginIn,
+            double minTravelIn,
+            double armTravelIn,
+            double posStallSpeed,
+            CsvLogger sampleLog) {
         if (rampPowerPerSec <= 0 || rampMax <= 0) {
             return new Result(true, 0, 0, 0, 0, 0, Double.NaN, "bad ramp settings");
         }
@@ -258,7 +346,7 @@ public final class ReversalFeedforwardId {
         // Seed localizer before the ramp.
         wheelVel.getAsDouble();
 
-        while (opMode.opModeIsActive() && timer.seconds() < rampDuration) {
+        while (opMode.nextFrame() && timer.seconds() < rampDuration) {
             // Manual end: press A just before the robot jams into the wall/mat lip so reverse
             // still has free wheels. Edge-detect so a held A from before START does not fire.
             if (opMode.gamepad1.aWasPressed()) {
@@ -271,9 +359,11 @@ public final class ReversalFeedforwardId {
             lastT = t;
             double power = Math.min(rampPowerPerSec * t, rampMax);
             setPower.accept(power);
-            double appliedV = power * voltageSensor.getVoltage();
+            double batteryV = opMode.batteryVoltage();
+            double appliedV = power * batteryV;
             double vel = wheelVel.getAsDouble();
             double speed = Math.abs(vel);
+            double poseIn = readPoseIn(axisPos);
 
             if (dt > 1e-4 && dt < 0.5) {
                 s += vel * dt;
@@ -298,13 +388,16 @@ public final class ReversalFeedforwardId {
                     isPositionFrozen(armed, power, posRate, stallMinPower, posStallSpeed);
             boolean collapsing = velCollapsed || posFrozen;
             if (collapsing) {
-                // Do not log wall-contact samples (high V, near-zero v) into the kS/kV fit.
+                // Do not put wall-contact samples (high V, near-zero v) into the kS/kV fit.
+                // Still log every loop so offline analysis sees the crash.
                 if (dt > 0 && dt < 0.5) {
                     stallAccum += dt;
                 }
                 if (stallTime > 0 && stallAccum >= stallTime) {
                     stoppedForWall = true;
                     trimPostPeakCollapse(rampT, rampV, rampVel, peakVel);
+                    logSample(sampleLog, t, "ramp", -1, power, batteryV, vel, poseIn);
+                    maybeFlush(sampleLog);
                     break;
                 }
             } else {
@@ -313,6 +406,8 @@ public final class ReversalFeedforwardId {
                 rampV.add(appliedV);
                 rampVel.add(vel);
             }
+            logSample(sampleLog, t, "ramp", -1, power, batteryV, vel, poseIn);
+            maybeFlush(sampleLog);
 
             telemetry.addData("phase", "ramp");
             telemetry.addLine("Press gamepad1 A to end ramp before wall/mat edge");
@@ -336,7 +431,6 @@ public final class ReversalFeedforwardId {
                                 ? "position"
                                 : (velCollapsed && !posFrozen ? "velocity" : "vel+pos"));
             }
-            telemetry.update();
         }
 
         // Brief coast so reverse does not inherit a wall-pressed stall state; keep ∫vel continuous.
@@ -344,7 +438,7 @@ public final class ReversalFeedforwardId {
         {
             ElapsedTime coast = new ElapsedTime();
             double lastCoast = 0;
-            while (opMode.opModeIsActive() && coast.seconds() < 0.2) {
+            while (opMode.nextFrame() && coast.seconds() < 0.2) {
                 double tc = coast.seconds();
                 double dtc = tc - lastCoast;
                 lastCoast = tc;
@@ -354,7 +448,6 @@ public final class ReversalFeedforwardId {
                 }
                 telemetry.addData("phase", "coast before kA");
                 telemetry.addData("travel (in)", "%.1f", s - s0);
-                telemetry.update();
             }
         }
 
@@ -380,7 +473,6 @@ public final class ReversalFeedforwardId {
                             "kA phase: timed half-cycles (%.1fs × %d) — travel only %.0f in.",
                             halfCycle, halfCycles, Math.abs(travel)));
         }
-        telemetry.update();
 
         // --- Phase 2: reverse square wave for kA (first half is opposite the ramp) ---
         // Live position continues the same ∫vel integrator so targets match the fit axis.
@@ -392,6 +484,7 @@ public final class ReversalFeedforwardId {
                     telemetry,
                     setPower,
                     wheelVel,
+                    axisPos,
                     sBox,
                     voltageSensor,
                     revT,
@@ -405,13 +498,15 @@ public final class ReversalFeedforwardId {
                     stallTime,
                     stallMinPower,
                     stallFrac,
-                    rampEndReason);
+                    rampEndReason,
+                    sampleLog);
         } else {
             runTimedReversePhase(
                     opMode,
                     telemetry,
                     setPower,
                     wheelVel,
+                    axisPos,
                     voltageSensor,
                     revT,
                     revV,
@@ -419,9 +514,13 @@ public final class ReversalFeedforwardId {
                     kaPower,
                     halfCycle,
                     halfCycles,
-                    rampEndReason);
+                    rampEndReason,
+                    sampleLog);
         }
         setPower.accept(0);
+        if (sampleLog != null) {
+            sampleLog.flush();
+        }
 
         return fitRampAndReverse(
                 toArray(rampT),
@@ -435,6 +534,31 @@ public final class ReversalFeedforwardId {
                 DEFAULT_KA_WINDOW,
                 DEFAULT_KA_STRIDE,
                 minRampTicksPerSec);
+    }
+
+    private static void logSample(
+            CsvLogger log,
+            double t,
+            String phase,
+            int halfIdx,
+            double power,
+            double batteryV,
+            double vel,
+            double poseIn) {
+        if (log == null) {
+            return;
+        }
+        log.row(t, phase, halfIdx, power, batteryV, vel, poseIn);
+    }
+
+    private static double readPoseIn(DoubleSupplier axisPos) {
+        return axisPos == null ? Double.NaN : axisPos.getAsDouble();
+    }
+
+    private static void maybeFlush(CsvLogger log) {
+        if (log != null && log.bufferedRows() >= LOG_FLUSH_EVERY) {
+            log.flush();
+        }
     }
 
     /**
@@ -508,10 +632,11 @@ public final class ReversalFeedforwardId {
     }
 
     private static void runTimedReversePhase(
-            LinearOpMode opMode,
+            MarsLinearOpMode opMode,
             Telemetry telemetry,
             DoubleConsumer setPower,
             DoubleSupplier wheelVel,
+            DoubleSupplier axisPos,
             VoltageSensor voltageSensor,
             List<Double> revT,
             List<Double> revV,
@@ -519,10 +644,11 @@ public final class ReversalFeedforwardId {
             double kaPower,
             double halfCycle,
             int halfCycles,
-            String rampEndReason) {
+            String rampEndReason,
+            CsvLogger sampleLog) {
         ElapsedTime timer = new ElapsedTime();
         double totalRev = halfCycles * halfCycle;
-        while (opMode.opModeIsActive() && timer.seconds() < totalRev) {
+        while (opMode.nextFrame() && timer.seconds() < totalRev) {
             double t = timer.seconds();
             int halfIdx = (int) (t / halfCycle);
             if (halfIdx >= halfCycles) {
@@ -531,16 +657,20 @@ public final class ReversalFeedforwardId {
             double power = (halfIdx % 2 == 0) ? -kaPower : kaPower;
             setPower.accept(power);
 
+            double batteryV = opMode.batteryVoltage();
+            double appliedV = power * batteryV;
+            double vel = wheelVel.getAsDouble();
             revT.add(t);
-            revV.add(power * voltageSensor.getVoltage());
-            revVel.add(wheelVel.getAsDouble());
+            revV.add(appliedV);
+            revVel.add(vel);
+            logSample(sampleLog, t, "reverse", halfIdx, power, batteryV, vel, readPoseIn(axisPos));
+            maybeFlush(sampleLog);
 
             telemetry.addData("phase", "reverse %d / %d (timed)", halfIdx + 1, halfCycles);
             telemetry.addData("ramp end", rampEndReason);
             telemetry.addData("power", "%.2f", power);
-            telemetry.addData("speed (in/s)", "%.1f", revVel.get(revVel.size() - 1));
+            telemetry.addData("speed (in/s)", "%.1f", vel);
             telemetry.addData("rev samples", revT.size());
-            telemetry.update();
         }
     }
 
@@ -550,10 +680,11 @@ public final class ReversalFeedforwardId {
      *     if a position target is already satisfied (or stalls early)
      */
     private static void runPositionReversePhase(
-            LinearOpMode opMode,
+            MarsLinearOpMode opMode,
             Telemetry telemetry,
             DoubleConsumer setPower,
             DoubleSupplier wheelVel,
+            DoubleSupplier axisPos,
             double[] sBox,
             VoltageSensor voltageSensor,
             List<Double> revT,
@@ -567,7 +698,8 @@ public final class ReversalFeedforwardId {
             double stallTime,
             double stallMinPower,
             double stallFrac,
-            String rampEndReason) {
+            String rampEndReason,
+            CsvLogger sampleLog) {
         double absTravel = Math.abs(corridor.travelIn);
         // Allow long corridors; always at least ~2× minHalf so a full reverse can complete.
         double maxHalfSec = Math.max(minHalfSec * 2.5, absTravel / 6.0 + 1.5);
@@ -587,7 +719,7 @@ public final class ReversalFeedforwardId {
             // half.
             double minProgress = Math.min(4.0, 0.15 * absTravel);
 
-            while (opMode.opModeIsActive() && halfTimer.seconds() < maxHalfSec) {
+            while (opMode.nextFrame() && halfTimer.seconds() < maxHalfSec) {
                 double t = global.seconds();
                 double dt = t - lastT;
                 lastT = t;
@@ -599,10 +731,22 @@ public final class ReversalFeedforwardId {
                 }
                 double pos = sBox[0];
                 double speed = Math.abs(vel);
+                double batteryV = opMode.batteryVoltage();
+                double appliedV = power * batteryV;
 
                 revT.add(t);
-                revV.add(power * voltageSensor.getVoltage());
+                revV.add(appliedV);
                 revVel.add(vel);
+                logSample(
+                        sampleLog,
+                        t,
+                        "reverse",
+                        halfIdx,
+                        power,
+                        batteryV,
+                        vel,
+                        readPoseIn(axisPos));
+                maybeFlush(sampleLog);
 
                 if (speed > DEFAULT_MOVING_SPEED * 0.5) {
                     everMoving = true;
@@ -654,7 +798,6 @@ public final class ReversalFeedforwardId {
                 telemetry.addData("progress (in)", "%.1f", progress);
                 telemetry.addData("half t (s)", "%.1f / %.1f", halfTimer.seconds(), maxHalfSec);
                 telemetry.addData("rev samples", revT.size());
-                telemetry.update();
             }
         }
     }

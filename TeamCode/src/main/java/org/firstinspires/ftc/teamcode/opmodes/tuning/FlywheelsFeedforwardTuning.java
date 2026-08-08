@@ -5,46 +5,45 @@ import com.qualcomm.hardware.lynx.LynxModule;
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
 import com.qualcomm.robotcore.hardware.DcMotorEx;
 
-import java.util.ArrayList;
-
 import org.firstinspires.ftc.robotcore.external.navigation.VoltageUnit;
+
+import java.util.ArrayList;
 
 /**
  * Automated feedforward tuner for the dual flywheel shooter.
- * <p>
- * When MOTORS_COUPLED is true, all motors are driven together and
- * velocity is read from motors[0], producing one set of gains. When false,
- * each motor is tuned independently, producing separate kS, kV, kA per motor.
- * <p>
- * Procedure (per motor or motor group):
- * 1. Ramps power slowly until the motor(s) overcome stiction (start spinning).
- * 2. Steps from stiction power to full power in NUM_STEPS equal steps.
- * 3. At each step, waits SETTLE_TIME_S for the speed to stabilize, then
- *    takes NUM_SAMPLES readings of velocity and applied voltage.
- * 4. Fits a line  voltage = kS + kV * velocity  via least-squares regression.
- * 5. Applies a step input and records the velocity rise curve. Fits
- *    ln(1 - w/w_final) vs t to extract the time constant tau, then
- *    computes kA = tau * kV. Repeats for STEP_RESPONSE_TRIALS trials.
- * 6. Displays kS, kV, kA, R², and all data points until the OpMode is stopped.
+ *
+ * <p>When MOTORS_COUPLED is true, all motors are driven together and velocity is read from
+ * motors[0], producing one set of gains. When false, each motor is tuned independently, producing
+ * separate kS, kV, kA per motor.
+ *
+ * <p>Procedure (per motor or motor group): 1. Ramps power slowly until the motor(s) overcome
+ * stiction (start spinning). 2. Steps from stiction power to full power in NUM_STEPS equal steps.
+ * 3. At each step, waits SETTLE_TIME_S for the speed to stabilize, then takes NUM_SAMPLES readings
+ * of velocity and applied voltage. 4. Fits a line voltage = kS + kV * velocity via least-squares
+ * regression. 5. Applies a step input and records the velocity rise curve. Fits ln(1 - w/w_final)
+ * vs t to extract the time constant tau, then computes kA = tau * kV. Repeats for
+ * STEP_RESPONSE_TRIALS trials. 6. Displays kS, kV, kA, R², and all data points until the OpMode is
+ * stopped.
  */
 @Config
 @TeleOp(name = "FlywheelsFeedforwardTuning", group = "Tuning")
 public class FlywheelsFeedforwardTuning extends FlywheelsTuningBase {
     public static class Params {
-        public int    NUM_STEPS = 6;
+        public int NUM_STEPS = 6;
         public double SETTLE_TIME_S = 5.0;
-        public int    NUM_SAMPLES = 25;
-        public double STICTION_RAMP_RATE = 0.03;       // power per second
+        public int NUM_SAMPLES = 25;
+        public double STICTION_RAMP_RATE = 0.03; // power per second
         public double STICTION_THRESHOLD_TPS = 50.0;
 
         public double STEP_RESPONSE_POWER = 0.80;
         public double COAST_STOP_THRESHOLD_TPS = 10.0;
         public double COAST_TIMEOUT_S = 10.0;
-        public int    STEP_RESPONSE_TRIALS = 3;
+        public int STEP_RESPONSE_TRIALS = 3;
         public double STEP_RESPONSE_MAX_TIME_S = 4.0;
         public double OMEGA_LOWER_FRACTION = 0.05;
         public double OMEGA_UPPER_FRACTION = 0.95;
     }
+
     public static Params PARAMS = new Params();
 
     private static class LinRegResult {
@@ -87,17 +86,22 @@ public class FlywheelsFeedforwardTuning extends FlywheelsTuningBase {
     /**
      * Runs a full tuning pass (stiction, steady-state, regression, step response).
      *
-     * @param label       display name for telemetry
+     * @param label display name for telemetry
      * @param powerMotors motors to drive during this pass
-     * @param encoder     motor to read velocity from
-     * @param module      LynxModule for voltage reads
-     * @param passIndex   0-based pass number (for telemetry)
+     * @param encoder motor to read velocity from
+     * @param module LynxModule for voltage reads
+     * @param passIndex 0-based pass number (for telemetry)
      * @param totalPasses total number of passes (for telemetry)
      * @return results, or null if the OpMode is stopped or the motor never starts
      */
-    private TuneResult runTuningPass(String label, DcMotorEx[] powerMotors,
-            DcMotorEx encoder, LynxModule module,
-            int passIndex, int totalPasses) throws InterruptedException {
+    private TuneResult runTuningPass(
+            String label,
+            DcMotorEx[] powerMotors,
+            DcMotorEx encoder,
+            LynxModule module,
+            int passIndex,
+            int totalPasses)
+            throws InterruptedException {
 
         var result = new TuneResult();
         result.label = label;
@@ -143,32 +147,28 @@ public class FlywheelsFeedforwardTuning extends FlywheelsTuningBase {
 
         if (!opModeIsActive()) return null;
 
-        result.stictionVoltage = result.stictionPower
-                * module.getInputVoltage(VoltageUnit.VOLTS);
+        result.stictionVoltage = result.stictionPower * module.getInputVoltage(VoltageUnit.VOLTS);
 
         // ── Phase 2: step through powers and collect data ────────────────────
         result.avgVelocities = new double[steps];
         result.avgVoltages = new double[steps];
 
         for (int step = 0; step < steps && opModeIsActive(); step++) {
-            double stepPower = result.stictionPower
-                    + (1.0 - result.stictionPower) * step / (steps - 1);
+            double stepPower =
+                    result.stictionPower + (1.0 - result.stictionPower) * step / (steps - 1);
 
             for (DcMotorEx m : powerMotors) m.setPower(stepPower);
 
             // settle
             double settleStart = getRuntime();
-            while (opModeIsActive()
-                    && (getRuntime() - settleStart) < PARAMS.SETTLE_TIME_S) {
+            while (opModeIsActive() && (getRuntime() - settleStart) < PARAMS.SETTLE_TIME_S) {
                 bulkReads.readAll();
                 telemetry.addData("Pass", "%s (%d/%d)", label, passIndex + 1, totalPasses);
-                telemetry.addData("Phase",
-                        "Step %d/%d – Settling", step + 1, steps);
+                telemetry.addData("Phase", "Step %d/%d – Settling", step + 1, steps);
                 telemetry.addData("Power", "%.4f", stepPower);
-                telemetry.addData("Velocity (tps)", "%.1f",
-                        encoder.getVelocity());
-                telemetry.addData("Time left", "%.1f s",
-                        PARAMS.SETTLE_TIME_S - (getRuntime() - settleStart));
+                telemetry.addData("Velocity (tps)", "%.1f", encoder.getVelocity());
+                telemetry.addData(
+                        "Time left", "%.1f s", PARAMS.SETTLE_TIME_S - (getRuntime() - settleStart));
                 telemetry.update();
             }
 
@@ -184,9 +184,8 @@ public class FlywheelsFeedforwardTuning extends FlywheelsTuningBase {
                 totalV += stepPower * battV;
 
                 telemetry.addData("Pass", "%s (%d/%d)", label, passIndex + 1, totalPasses);
-                telemetry.addData("Phase",
-                        "Step %d/%d – Sampling %d/%d",
-                        step + 1, steps, s + 1, samples);
+                telemetry.addData(
+                        "Phase", "Step %d/%d – Sampling %d/%d", step + 1, steps, s + 1, samples);
                 telemetry.addData("Power", "%.4f", stepPower);
                 telemetry.addData("Velocity (tps)", "%.1f", vel);
                 telemetry.addData("Voltage (V)", "%.3f", stepPower * battV);
@@ -204,15 +203,13 @@ public class FlywheelsFeedforwardTuning extends FlywheelsTuningBase {
         for (DcMotorEx m : powerMotors) m.setPower(0);
 
         // ── Phase 3: least-squares fit  voltage = kS + kV · velocity ─────────
-        LinRegResult fit = linearRegression(
-                result.avgVelocities, result.avgVoltages, steps);
+        LinRegResult fit = linearRegression(result.avgVelocities, result.avgVoltages, steps);
         result.kV = fit.slope;
         result.kS = fit.intercept;
         result.rSquared = fit.rSquared;
 
         // ── Phase 4: step response for kA ────────────────────────────────────
-        double stepVoltage = PARAMS.STEP_RESPONSE_POWER
-                * module.getInputVoltage(VoltageUnit.VOLTS);
+        double stepVoltage = PARAMS.STEP_RESPONSE_POWER * module.getInputVoltage(VoltageUnit.VOLTS);
         double wFinal = (stepVoltage - result.kS) / result.kV;
 
         var tauValues = new ArrayList<Double>();
@@ -226,11 +223,12 @@ public class FlywheelsFeedforwardTuning extends FlywheelsTuningBase {
                 while (opModeIsActive()) {
                     bulkReads.readAll();
                     double vel = Math.abs(encoder.getVelocity());
-                    telemetry.addData("Pass", "%s (%d/%d)",
-                            label, passIndex + 1, totalPasses);
-                    telemetry.addData("Phase",
+                    telemetry.addData("Pass", "%s (%d/%d)", label, passIndex + 1, totalPasses);
+                    telemetry.addData(
+                            "Phase",
                             "Step Response – Coasting (trial %d/%d)",
-                            trial + 1, PARAMS.STEP_RESPONSE_TRIALS);
+                            trial + 1,
+                            PARAMS.STEP_RESPONSE_TRIALS);
                     telemetry.addData("Velocity (tps)", "%.1f", vel);
                     telemetry.update();
                     if (vel < PARAMS.COAST_STOP_THRESHOLD_TPS) break;
@@ -238,27 +236,28 @@ public class FlywheelsFeedforwardTuning extends FlywheelsTuningBase {
                     sleep(10);
                 }
                 if (!opModeIsActive()) break;
-                sleep(200);  // brief pause at rest
+                sleep(200); // brief pause at rest
 
                 // Apply step and sample
                 var sampleTimes = new ArrayList<Double>();
-                var sampleVels  = new ArrayList<Double>();
+                var sampleVels = new ArrayList<Double>();
                 double stepStart = getRuntime();
                 for (DcMotorEx m : powerMotors) m.setPower(PARAMS.STEP_RESPONSE_POWER);
 
                 while (opModeIsActive()
                         && (getRuntime() - stepStart) < PARAMS.STEP_RESPONSE_MAX_TIME_S) {
                     bulkReads.readAll();
-                    double t   = getRuntime() - stepStart;
+                    double t = getRuntime() - stepStart;
                     double vel = encoder.getVelocity();
                     sampleTimes.add(t);
                     sampleVels.add(vel);
 
-                    telemetry.addData("Pass", "%s (%d/%d)",
-                            label, passIndex + 1, totalPasses);
-                    telemetry.addData("Phase",
+                    telemetry.addData("Pass", "%s (%d/%d)", label, passIndex + 1, totalPasses);
+                    telemetry.addData(
+                            "Phase",
                             "Step Response – Sampling (trial %d/%d)",
-                            trial + 1, PARAMS.STEP_RESPONSE_TRIALS);
+                            trial + 1,
+                            PARAMS.STEP_RESPONSE_TRIALS);
                     telemetry.addData("Time", "%.3f s", t);
                     telemetry.addData("Velocity (tps)", "%.1f", vel);
                     telemetry.addData("w_final (tps)", "%.1f", wFinal);
@@ -333,17 +332,16 @@ public class FlywheelsFeedforwardTuning extends FlywheelsTuningBase {
                 encoder = motors[0];
             } else {
                 label = HARDWARE.MOTOR_NAMES[pass];
-                powerMotors = new DcMotorEx[]{motors[pass]};
+                powerMotors = new DcMotorEx[] {motors[pass]};
                 encoder = motors[pass];
             }
 
-            results[pass] = runTuningPass(label, powerMotors, encoder,
-                    module, pass, numPasses);
+            results[pass] = runTuningPass(label, powerMotors, encoder, module, pass, numPasses);
             if (results[pass] == null) return;
         }
 
         // ── Display results until stopped ────────────────────────────────────
-        while (opModeIsActive()) {
+        while (nextFrame()) {
             for (int p = 0; p < numPasses; p++) {
                 TuneResult r = results[p];
                 String pfx = numPasses > 1 ? r.label + " " : "";
@@ -354,16 +352,17 @@ public class FlywheelsFeedforwardTuning extends FlywheelsTuningBase {
                     telemetry.addData(pfx + "kA", "%.6f V·s²/tick", r.kA);
                     telemetry.addData(pfx + "tau", "%.4f s", r.avgTau);
                     telemetry.addData(pfx + "kA R²", "%.6f", r.avgStepR2);
-                    telemetry.addData(pfx + "kA valid trials", "%d / %d",
-                            r.validTrials, PARAMS.STEP_RESPONSE_TRIALS);
+                    telemetry.addData(
+                            pfx + "kA valid trials",
+                            "%d / %d",
+                            r.validTrials,
+                            PARAMS.STEP_RESPONSE_TRIALS);
                 } else {
                     telemetry.addData(pfx + "kA", "FAILED – no valid trials");
                 }
                 telemetry.addData(pfx + "kS/kV R²", "%.6f", r.rSquared);
-                telemetry.addData(pfx + "stiction power", "%.4f",
-                        r.stictionPower);
-                telemetry.addData(pfx + "stiction voltage", "%.3f V",
-                        r.stictionVoltage);
+                telemetry.addData(pfx + "stiction power", "%.4f", r.stictionPower);
+                telemetry.addData(pfx + "stiction voltage", "%.3f V", r.stictionVoltage);
                 telemetry.addLine("");
                 telemetry.addData("── " + r.label + " PASTE ──", "");
                 telemetry.addData(pfx + "  kS =", "%.4f", r.kS);
@@ -375,11 +374,11 @@ public class FlywheelsFeedforwardTuning extends FlywheelsTuningBase {
                     telemetry.addData(
                             String.format("%sStep %d", pfx, i + 1),
                             "%.1f tps @ %.3f V",
-                            r.avgVelocities[i], r.avgVoltages[i]);
+                            r.avgVelocities[i],
+                            r.avgVoltages[i]);
                 }
                 telemetry.addLine("");
             }
-            telemetry.update();
         }
     }
 }

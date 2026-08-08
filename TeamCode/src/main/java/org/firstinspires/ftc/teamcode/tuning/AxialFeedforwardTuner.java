@@ -1,15 +1,14 @@
 package org.firstinspires.ftc.teamcode.tuning;
 
-import com.acmerobotics.dashboard.FtcDashboard;
 import com.acmerobotics.dashboard.config.Config;
-import com.acmerobotics.dashboard.telemetry.MultipleTelemetry;
 import com.acmerobotics.roadrunner.Pose2d;
-import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 import com.qualcomm.robotcore.hardware.DcMotorEx;
 import com.qualcomm.robotcore.hardware.VoltageSensor;
 
 import org.firstinspires.ftc.teamcode.MecanumDrive;
 import org.firstinspires.ftc.teamcode.TankDrive;
+import org.firstinspires.ftc.teamcode.opmodes.base.MarsLinearOpMode;
+import org.firstinspires.ftc.teamcode.utils.CsvLogger;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -36,9 +35,23 @@ import java.util.function.DoubleSupplier;
  * statics so later tuning OpModes in the same RC process can chain without a paste. A ramp-only (kA
  * failed) fit still writes {@code kS}/{@code kV}. Paste into source to keep values across restart
  * or redeploy.
+ *
+ * <p>Each run writes two CSVs under {@code /sdcard/FIRST/} (via {@link CsvLogger}):
+ *
+ * <ul>
+ *   <li>{@code axial_ff_samples_&lt;stamp&gt;.csv} — raw loop measurements (power, battery,
+ *       velocity, pose; see {@link ReversalFeedforwardId#SAMPLE_HEADER})
+ *   <li>{@code axial_ff_meta_&lt;stamp&gt;.csv} — run config / plant scale for offline re-fit (see
+ *       {@link ReversalFeedforwardId#META_HEADER}); not the fitted kS/kV/kA
+ * </ul>
+ *
+ * Pull them with {@code telemetry/pull.sh}.
  */
 @Config
-public final class AxialFeedforwardTuner extends LinearOpMode {
+public final class AxialFeedforwardTuner extends MarsLinearOpMode {
+    /** When false, skip writing CSVs (useful if the hub disk is full). */
+    public static boolean LOG_CSV = true;
+
     /** Power increase per second during the kS/kV ramp (stock ForwardRampLogger uses 0.1). */
     public static double RAMP_POWER_PER_SEC = 0.1;
 
@@ -107,8 +120,7 @@ public final class AxialFeedforwardTuner extends LinearOpMode {
 
     @Override
     public void runOpMode() throws InterruptedException {
-        MultipleTelemetry telemetry =
-                new MultipleTelemetry(this.telemetry, FtcDashboard.getInstance().getTelemetry());
+        initRobot();
 
         DoubleConsumer setPower;
         DoubleSupplier forwardVel; // signed chassis forward velocity, in/s, from the localizer
@@ -118,7 +130,8 @@ public final class AxialFeedforwardTuner extends LinearOpMode {
         String driveName;
 
         if (TuningOpModes.DRIVE_CLASS.equals(MecanumDrive.class)) {
-            MecanumDrive drive = new MecanumDrive(hardwareMap, new Pose2d(0, 0, 0));
+            MecanumDrive drive =
+                    new MecanumDrive(hardwareMap, new Pose2d(0, 0, 0), this::batteryVoltage);
             setPower =
                     p -> {
                         drive.leftFront.setPower(p);
@@ -132,7 +145,7 @@ public final class AxialFeedforwardTuner extends LinearOpMode {
             inPerTick = MecanumDrive.PARAMS.inPerTick;
             driveName = "MecanumDrive";
         } else if (TuningOpModes.DRIVE_CLASS.equals(TankDrive.class)) {
-            TankDrive drive = new TankDrive(hardwareMap, new Pose2d(0, 0, 0));
+            TankDrive drive = new TankDrive(hardwareMap, new Pose2d(0, 0, 0), this::batteryVoltage);
             List<DcMotorEx> allMotors = new ArrayList<>(drive.leftMotors);
             allMotors.addAll(drive.rightMotors);
             setPower =
@@ -150,6 +163,45 @@ public final class AxialFeedforwardTuner extends LinearOpMode {
             throw new RuntimeException("Unknown DRIVE_CLASS");
         }
 
+        CsvLogger sampleLog = null;
+        CsvLogger metaLog = null;
+        if (LOG_CSV) {
+            String stamp =
+                    new java.text.SimpleDateFormat("yyyyMMdd_HHmmss", java.util.Locale.US)
+                            .format(new java.util.Date());
+            sampleLog =
+                    new CsvLogger(
+                            "axial_ff_samples_" + stamp + ".csv",
+                            ReversalFeedforwardId.SAMPLE_HEADER);
+            metaLog =
+                    new CsvLogger(
+                            "axial_ff_meta_" + stamp + ".csv", ReversalFeedforwardId.META_HEADER);
+            // Config only — fit outputs are recomputed from samples offline.
+            metaLog.row(
+                    driveName,
+                    "axial",
+                    inPerTick,
+                    RAMP_POWER_PER_SEC,
+                    RAMP_MAX,
+                    KA_POWER,
+                    HALF_CYCLE,
+                    KA_HALF_CYCLES,
+                    SIGN_DEADBAND,
+                    STALL_SPEED,
+                    STALL_TIME,
+                    MOVING_SPEED,
+                    STALL_MIN_POWER,
+                    STALL_FRAC,
+                    MIN_RAMP_TICKS_PER_SEC,
+                    END_MARGIN_IN,
+                    MIN_TRAVEL_IN,
+                    ARM_TRAVEL_IN,
+                    POS_STALL_SPEED,
+                    ReversalFeedforwardId.DEFAULT_KA_WINDOW,
+                    ReversalFeedforwardId.DEFAULT_KA_STRIDE);
+            metaLog.flush();
+        }
+
         telemetry.addLine("Axial feedforward tuner (identifies kS, kV, kA).");
         telemetry.addLine("Phase 1: ramps FORWARD (+x) → kS, kV (like ForwardRampLogger).");
         telemetry.addLine("  Press gamepad1 A just before wall/mat edge (recommended).");
@@ -158,9 +210,17 @@ public final class AxialFeedforwardTuner extends LinearOpMode {
         telemetry.addLine("  Half-cycles use the distance driven on the ramp when possible.");
         telemetry.addLine("Press START. Leave room BEHIND the start for reverse.");
         telemetry.addLine("Localization must be sign-correct (forward → +x).");
+        if (sampleLog != null) {
+            telemetry.addData("sample log", sampleLog.fileName());
+            telemetry.addData("meta log", metaLog.fileName());
+            telemetry.addLine("Pull with: telemetry/pull.sh");
+        }
         telemetry.update();
         waitForStart();
-        if (isStopRequested()) return;
+        if (isStopRequested()) {
+            closeLogs(sampleLog, metaLog);
+            return;
+        }
 
         ReversalFeedforwardId.Result fit =
                 ReversalFeedforwardId.identify(
@@ -186,7 +246,8 @@ public final class AxialFeedforwardTuner extends LinearOpMode {
                         END_MARGIN_IN,
                         MIN_TRAVEL_IN,
                         ARM_TRAVEL_IN,
-                        POS_STALL_SPEED);
+                        POS_STALL_SPEED,
+                        sampleLog);
 
         boolean wroteRampOnly = false;
         if (!fit.singular) {
@@ -201,7 +262,9 @@ public final class AxialFeedforwardTuner extends LinearOpMode {
             wroteRampOnly = true;
         }
 
-        while (opModeIsActive()) {
+        closeLogs(sampleLog, metaLog);
+
+        while (nextFrame()) {
             if (fit.singular) {
                 telemetry.addLine("Fit failed: " + fit.message);
                 telemetry.addData("samples", fit.samples);
@@ -232,7 +295,18 @@ public final class AxialFeedforwardTuner extends LinearOpMode {
                 telemetry.addLine(
                         "kS/kV should match ForwardRampLogger closely; kA is the new piece.");
             }
-            telemetry.update();
+            if (LOG_CSV) {
+                telemetry.addLine("CSVs on hub under /sdcard/FIRST/ — pull with telemetry/pull.sh");
+            }
+        }
+    }
+
+    private static void closeLogs(CsvLogger sampleLog, CsvLogger metaLog) {
+        if (sampleLog != null) {
+            sampleLog.close();
+        }
+        if (metaLog != null) {
+            metaLog.close();
         }
     }
 

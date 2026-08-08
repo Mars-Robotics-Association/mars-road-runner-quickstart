@@ -1,16 +1,15 @@
 package org.firstinspires.ftc.teamcode.tuning;
 
-import com.acmerobotics.dashboard.FtcDashboard;
 import com.acmerobotics.dashboard.config.Config;
-import com.acmerobotics.dashboard.telemetry.MultipleTelemetry;
 import com.acmerobotics.roadrunner.Pose2d;
 import com.acmerobotics.roadrunner.PoseVelocity2d;
 import com.acmerobotics.roadrunner.Rotation2d;
-import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 import com.qualcomm.robotcore.util.Range;
 
 import org.firstinspires.ftc.teamcode.MecanumDrive;
 import org.firstinspires.ftc.teamcode.TankDrive;
+import org.firstinspires.ftc.teamcode.opmodes.base.MarsLinearOpMode;
+import org.firstinspires.ftc.teamcode.utils.CsvLogger;
 
 import java.util.function.DoubleConsumer;
 import java.util.function.DoubleSupplier;
@@ -33,9 +32,23 @@ import java.util.function.DoubleSupplier;
  * in the same RC process can chain without a paste. A ramp-only fit still writes {@code
  * lateralKS}/{@code lateralKV} and enables anisotropic mode. Paste into source to keep values
  * across restart or redeploy.
+ *
+ * <p>Each run writes two CSVs under {@code /sdcard/FIRST/} (via {@link CsvLogger}):
+ *
+ * <ul>
+ *   <li>{@code lateral_ff_samples_&lt;stamp&gt;.csv} — raw loop measurements (power, battery,
+ *       velocity, pose; see {@link ReversalFeedforwardId#SAMPLE_HEADER})
+ *   <li>{@code lateral_ff_meta_&lt;stamp&gt;.csv} — run config / plant scale for offline re-fit
+ *       (see {@link ReversalFeedforwardId#META_HEADER}); not the fitted lateralKS/KV/KA
+ * </ul>
+ *
+ * Pull them with {@code telemetry/pull.sh}.
  */
 @Config
-public final class LateralFeedforwardTuner extends LinearOpMode {
+public final class LateralFeedforwardTuner extends MarsLinearOpMode {
+    /** When false, skip writing CSVs (useful if the hub disk is full). */
+    public static boolean LOG_CSV = true;
+
     /** Power increase per second during the lateral ramp. */
     public static double RAMP_POWER_PER_SEC = 0.1;
 
@@ -120,11 +133,55 @@ public final class LateralFeedforwardTuner extends LinearOpMode {
                             + " drive has no lateral motion.");
         }
 
-        MultipleTelemetry telemetry =
-                new MultipleTelemetry(this.telemetry, FtcDashboard.getInstance().getTelemetry());
-        MecanumDrive drive = new MecanumDrive(hardwareMap, new Pose2d(0, 0, 0));
+        initRobot();
+        MecanumDrive drive =
+                new MecanumDrive(hardwareMap, new Pose2d(0, 0, 0), this::batteryVoltage);
         double inPerTick = MecanumDrive.PARAMS.inPerTick;
         double lateralMultiplier = drive.kinematics.lateralMultiplier;
+
+        CsvLogger sampleLog = null;
+        CsvLogger metaLog = null;
+        if (LOG_CSV) {
+            String stamp =
+                    new java.text.SimpleDateFormat("yyyyMMdd_HHmmss", java.util.Locale.US)
+                            .format(new java.util.Date());
+            sampleLog =
+                    new CsvLogger(
+                            "lateral_ff_samples_" + stamp + ".csv",
+                            ReversalFeedforwardId.SAMPLE_HEADER);
+            // Shared identify knobs + lateral-only plant/hold config (not fit results).
+            String metaHeader =
+                    ReversalFeedforwardId.META_HEADER
+                            + ",lateral_multiplier,heading_gain,heading_vel_gain,heading_max_corr";
+            metaLog = new CsvLogger("lateral_ff_meta_" + stamp + ".csv", metaHeader);
+            metaLog.row(
+                    "MecanumDrive",
+                    "lateral",
+                    inPerTick,
+                    RAMP_POWER_PER_SEC,
+                    RAMP_MAX,
+                    KA_POWER,
+                    HALF_CYCLE,
+                    KA_HALF_CYCLES,
+                    SIGN_DEADBAND,
+                    STALL_SPEED,
+                    STALL_TIME,
+                    MOVING_SPEED,
+                    STALL_MIN_POWER,
+                    STALL_FRAC,
+                    MIN_RAMP_TICKS_PER_SEC,
+                    END_MARGIN_IN,
+                    MIN_TRAVEL_IN,
+                    ARM_TRAVEL_IN,
+                    POS_STALL_SPEED,
+                    ReversalFeedforwardId.DEFAULT_KA_WINDOW,
+                    ReversalFeedforwardId.DEFAULT_KA_STRIDE,
+                    lateralMultiplier,
+                    HEADING_GAIN,
+                    HEADING_VEL_GAIN,
+                    HEADING_MAX_CORR);
+            metaLog.flush();
+        }
 
         telemetry.addLine("Mecanum lateral (strafe) feedforward tuner (kS, kV, kA).");
         telemetry.addLine("Phase 1: ramps LEFT (robot +y) → lateralKS/KV.");
@@ -134,9 +191,17 @@ public final class LateralFeedforwardTuner extends LinearOpMode {
         telemetry.addLine("Phase 2: reverse square wave → lateralKA (first goes RIGHT).");
         telemetry.addLine("  Half-cycles use the distance driven on the ramp when possible.");
         telemetry.addLine("Press START. Leave room on the RIGHT for reverse.");
+        if (sampleLog != null) {
+            telemetry.addData("sample log", sampleLog.fileName());
+            telemetry.addData("meta log", metaLog.fileName());
+            telemetry.addLine("Pull with: telemetry/pull.sh");
+        }
         telemetry.update();
         waitForStart();
-        if (isStopRequested()) return;
+        if (isStopRequested()) {
+            closeLogs(sampleLog, metaLog);
+            return;
+        }
 
         // Hold the heading at START so open-loop strafe reversals do not walk in yaw.
         drive.localizer.update();
@@ -166,6 +231,7 @@ public final class LateralFeedforwardTuner extends LinearOpMode {
         DoubleSupplier wheelVel = () -> drive.localizer.update().linearVel.y * lateralMultiplier;
         DoubleSupplier axisPos = () -> drive.localizer.getPose().position.y;
 
+        // identify() runs its own opModeIsActive loops (not nextFrame) — intentional for sysid.
         ReversalFeedforwardId.Result fit =
                 ReversalFeedforwardId.identify(
                         this,
@@ -190,7 +256,8 @@ public final class LateralFeedforwardTuner extends LinearOpMode {
                         END_MARGIN_IN,
                         MIN_TRAVEL_IN,
                         ARM_TRAVEL_IN,
-                        POS_STALL_SPEED);
+                        POS_STALL_SPEED,
+                        sampleLog);
 
         boolean wroteRampOnly = false;
         if (!fit.singular) {
@@ -209,7 +276,9 @@ public final class LateralFeedforwardTuner extends LinearOpMode {
             wroteRampOnly = true;
         }
 
-        while (opModeIsActive()) {
+        closeLogs(sampleLog, metaLog);
+
+        while (nextFrame()) {
             if (fit.singular) {
                 telemetry.addLine("Fit failed: " + fit.message);
                 telemetry.addData("samples", fit.samples);
@@ -243,7 +312,18 @@ public final class LateralFeedforwardTuner extends LinearOpMode {
                         "Live for later OpModes this session. Paste into source to keep.");
                 telemetry.addLine("Expect lateralKS ≫ axial kS; kV/kA often only modestly higher.");
             }
-            telemetry.update();
+            if (LOG_CSV) {
+                telemetry.addLine("CSVs on hub under /sdcard/FIRST/ — pull with telemetry/pull.sh");
+            }
+        }
+    }
+
+    private static void closeLogs(CsvLogger sampleLog, CsvLogger metaLog) {
+        if (sampleLog != null) {
+            sampleLog.close();
+        }
+        if (metaLog != null) {
+            metaLog.close();
         }
     }
 }
