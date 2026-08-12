@@ -1,44 +1,36 @@
 package org.firstinspires.ftc.teamcode.opmodes.tests
 
 import com.acmerobotics.dashboard.config.Config
-import com.acmerobotics.dashboard.telemetry.TelemetryPacket
 import com.acmerobotics.roadrunner.Pose2d
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp
+import java.util.ArrayDeque
+import kotlin.math.PI
+import kotlin.math.abs
+import kotlin.math.floor
 import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit
 import org.firstinspires.ftc.teamcode.Drawing
 import org.firstinspires.ftc.teamcode.MecanumDrive
 import org.firstinspires.ftc.teamcode.PinpointLocalizer
 import org.firstinspires.ftc.teamcode.opmodes.base.MarsLinearOpMode
 import org.firstinspires.ftc.teamcode.utils.RoadRunnerTeleOpDrive
-import java.util.ArrayDeque
-import kotlin.math.abs
-import kotlin.math.floor
 
 /**
- * Tuning opmode to calibrate the parY and perpX encoder offsets in
- * [PinpointLocalizer.Params].
+ * Tuning opmode to calibrate the parY and perpX encoder offsets in [PinpointLocalizer.Params].
  *
- * <p>When the robot spins in place, incorrect offsets cause the reported position to trace circles
- * on the dashboard field view. This tuner measures the drift and computes corrected offset values.
+ * When the robot spins in place, incorrect offsets cause the reported position to trace circles on
+ * the dashboard field view. This tuner measures the drift and computes corrected offset values.
  *
- * <h3>How to use</h3>
+ * ### How to use
+ * 1. Run this opmode and spin the robot in place using the right stick (left stick is ignored).
+ * 2. Spin consistently in one direction for several full revolutions.
+ * 3. Read the corrected parY and perpX values from telemetry.
+ * 4. Update [PinpointLocalizer.Params] with those values.
+ * 5. Re-run the tuner — the position should stay nearly fixed.
  *
- * <ol>
- *   <li>Run this opmode and spin the robot in place using the right stick (left stick is ignored).
- *   <li>Spin consistently in one direction for several full revolutions.
- *   <li>Read the corrected parY and perpX values from telemetry.
- *   <li>Update [PinpointLocalizer.Params] with those values.
- *   <li>Re-run the tuner — the position should stay nearly fixed.
- * </ol>
- *
- * <h3>Math</h3>
- *
+ * ### Math
  * After a 180° heading change starting at heading 0:
- *
- * <ul>
- *   <li>Field x displacement = −2 × perpX_error (inches)
- *   <li>Field y displacement = −2 × parY_error (inches)
- * </ul>
+ * - Field x displacement = −2 × perpX_error (inches)
+ * - Field y displacement = −2 × parY_error (inches)
  *
  * So: corrected offset = current offset − measured displacement / 2
  */
@@ -46,14 +38,13 @@ import kotlin.math.floor
 @TeleOp(name = "Pinpoint Offset Tuner", group = "Tuning")
 class PinpointOffsetTuner : MarsLinearOpMode() {
     companion object {
-        @JvmField
-        var poseHistorySize = 200
+        @JvmField var poseHistorySize = 200
     }
 
     override fun runOpMode() {
         initRobot()
         val drive =
-            MecanumDrive.forMarsLinear(hardwareMap, Pose2d(0.0, 0.0, 0.0), this::batteryVoltage)
+            MecanumDrive.forMarsLinear(hardwareMap, Pose2d(0.0, 0.0, 0.0)) { batteryVoltage() }
 
         val poseHistory = ArrayDeque<Pose2d>(poseHistorySize + 1)
 
@@ -68,10 +59,8 @@ class PinpointOffsetTuner : MarsLinearOpMode() {
         var sumDx = 0.0
         var sumDy = 0.0
 
-        val currentParYInches =
-            PinpointLocalizer.PARAMS.parYTicks * MecanumDrive.PARAMS.inPerTick
-        val currentPerpXInches =
-            PinpointLocalizer.PARAMS.perpXTicks * MecanumDrive.PARAMS.inPerTick
+        val currentParYInches = PinpointLocalizer.PARAMS.parYTicks * MecanumDrive.PARAMS.inPerTick
+        val currentPerpXInches = PinpointLocalizer.PARAMS.perpXTicks * MecanumDrive.PARAMS.inPerTick
 
         telemetry.addLine("Pinpoint Offset Tuner")
         telemetry.addLine("Spin the robot in place using the right stick.")
@@ -94,20 +83,23 @@ class PinpointOffsetTuner : MarsLinearOpMode() {
             totalHeadingChange += delta
             lastHeading = currentHeading
 
-            val halfRevs = floor(abs(totalHeadingChange) / Math.PI).toInt()
+            val halfRevs = floor(abs(totalHeadingChange) / PI).toInt()
             if (halfRevs > 0 && halfRevs % 2 == 1 && halfRevs != lastOddHalfRev) {
-                val dx = pose.position.x - startX
-                val dy = pose.position.y - startY
-                sumDx += dx
-                sumDy += dy
+                sumDx += pose.position.x - startX
+                sumDy += pose.position.y - startY
                 sampleCount++
                 lastOddHalfRev = halfRevs
             }
 
             drive.setDrivePowers(
                 RoadRunnerTeleOpDrive.toDrivePowers(
-                    false, 0.0, 0.0, gamepad1.right_stick_x.toDouble(), 1.0, pose.heading,
-                ),
+                    fieldCentric = false,
+                    lateralSpeed = 0.0,
+                    axialSpeed = 0.0,
+                    turnSpeed = gamepad1.right_stick_x.toDouble(),
+                    speedFactor = 1.0,
+                    heading = pose.heading,
+                )
             )
 
             telemetry.addData("Position", "(%.3f, %.3f)", pose.position.x, pose.position.y)
@@ -146,8 +138,7 @@ class PinpointOffsetTuner : MarsLinearOpMode() {
             telemetry.addData("Current configured perpX", "%.4f in", currentPerpXInches)
             telemetry.addData("Current configured parY", "%.4f in", currentParYInches)
 
-            val packet: TelemetryPacket? = dashboardPacket()
-            if (packet != null) {
+            dashboardPacket()?.let { packet ->
                 val c = packet.fieldOverlay()
                 Drawing.drawRobot(c, pose)
                 Drawing.drawPoseHistory(c, "#FF0000", poseHistory)

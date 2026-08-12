@@ -1,11 +1,9 @@
 package org.firstinspires.ftc.teamcode.opmodes.tuning
 
-import com.qualcomm.robotcore.hardware.DcMotor
-
 import com.acmerobotics.dashboard.config.Config
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp
+import com.qualcomm.robotcore.hardware.DcMotor
 import com.qualcomm.robotcore.hardware.DcMotorEx
-import org.firstinspires.ftc.teamcode.opmodes.base.MarsLinearOpMode
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.atan2
@@ -16,28 +14,26 @@ import kotlin.math.min
 import kotlin.math.sign
 import kotlin.math.sin
 import kotlin.math.sqrt
+import org.firstinspires.ftc.teamcode.opmodes.base.MarsLinearOpMode
 
 /**
  * Automated feedforward tuner for a single arm using ArmFeedforward (WPILib port).
  *
- * <p>Produces kS, kG, kV, kA in the units ArmFeedforward expects: V, V, V·s/rad, V·s²/rad.
+ * Produces kS, kG, kV, kA in the units ArmFeedforward expects: V, V, V·s/rad, V·s²/rad.
  *
- * <p>The sin/cos dual-regressor model `V = kS·sign(ω) + c1·cos(θ) + c2·sin(θ) + kV·ω` absorbs
- * both encoder-zero offset and any CM angular offset (L-shaped arm, offset attachment), so the
- * encoder does not need to be zeroed at horizontal. After regression: `kG = sqrt(c1²+c2²)`,
- * `φ = atan2(-c2, c1)` = angle where arm is horizontal in encoder ticks.
+ * The sin/cos dual-regressor model `V = kS·sign(ω) + c1·cos(θ) + c2·sin(θ) + kV·ω` absorbs both
+ * encoder-zero offset and any CM angular offset (L-shaped arm, offset attachment), so the encoder
+ * does not need to be zeroed at horizontal. After regression: `kG = sqrt(c1²+c2²)`, `φ = atan2(-c2,
+ * c1)` = angle where arm is horizontal in encoder ticks.
  *
- * <p>Procedure:
- *
- * <ol>
- *   <li>Position arm at one end of its range, press Start, then press A.
- *   <li>Quasistatic forward sweep: power ramps up slowly while recording samples.
- *   <li>Move arm back toward start, press A.
- *   <li>Quasistatic backward sweep: power ramps negative while recording samples.
- *   <li>OLS regression yields kS, kG (=√(c1²+c2²)), kV, φ, and R².
- *   <li>Step response (STEP_TRIALS trials): gravity-subtracted first-order fit → kA.
- *   <li>Results displayed until OpMode is stopped.
- * </ol>
+ * Procedure:
+ * 1. Position arm at one end of its range, press Start, then press A.
+ * 2. Quasistatic forward sweep: power ramps up slowly while recording samples.
+ * 3. Move arm back toward start, press A.
+ * 4. Quasistatic backward sweep: power ramps negative while recording samples.
+ * 5. OLS regression yields kS, kG (=√(c1²+c2²)), kV, φ, and R².
+ * 6. Step response (STEP_TRIALS trials): gravity-subtracted first-order fit → kA.
+ * 7. Results displayed until OpMode is stopped.
  */
 @Config
 @TeleOp(name = "ArmFeedforwardTuning", group = "Tuning")
@@ -87,14 +83,13 @@ class ArmFeedforwardTuning : MarsLinearOpMode() {
     }
 
     companion object {
-        @JvmField
-        var PARAMS = Params()
+        @JvmField var PARAMS = Params()
 
         // ── Gaussian elimination with partial pivoting (4×4) ─────────────────────
 
         /**
-         * Solves the 4×4 linear system A·x = b via Gaussian elimination with partial pivoting. A and b
-         * are modified in-place; pass copies if they need to be preserved.
+         * Solves the 4×4 linear system A·x = b via Gaussian elimination with partial pivoting. A
+         * and b are modified in-place; pass copies if they need to be preserved.
          *
          * @return solution vector, or null if A is (near-)singular
          */
@@ -164,33 +159,30 @@ class ArmFeedforwardTuning : MarsLinearOpMode() {
                 sumXY += x[i] * y[i]
                 sumX2 += x[i] * x[i]
             }
-            val r = LinRegResult()
             val denom = n * sumX2 - sumX * sumX
             if (abs(denom) < 1e-12) {
-                r.slope = 0.0
-                r.intercept = sumY / n
-                return r
+                return LinRegResult(slope = 0.0, intercept = sumY / n, rSquared = 0.0)
             }
-            r.slope = (n * sumXY - sumX * sumY) / denom
-            r.intercept = (sumY - r.slope * sumX) / n
+            val slope = (n * sumXY - sumX * sumY) / denom
+            val intercept = (sumY - slope * sumX) / n
 
             val meanY = sumY / n
             var ssRes = 0.0
             var ssTot = 0.0
             for (i in 0 until n) {
-                val predicted = r.intercept + r.slope * x[i]
+                val predicted = intercept + slope * x[i]
                 ssRes += (y[i] - predicted) * (y[i] - predicted)
                 ssTot += (y[i] - meanY) * (y[i] - meanY)
             }
-            r.rSquared = if (ssTot == 0.0) 1.0 else 1.0 - ssRes / ssTot
-            return r
+            val rSquared = if (ssTot == 0.0) 1.0 else 1.0 - ssRes / ssTot
+            return LinRegResult(slope, intercept, rSquared)
         }
 
-        private class LinRegResult {
-            var slope = 0.0
-            var intercept = 0.0
-            var rSquared = 0.0
-        }
+        private data class LinRegResult(
+            val slope: Double,
+            val intercept: Double,
+            val rSquared: Double,
+        )
     }
 
     // ── Online normal-equation accumulators ───────────────────────────────────
@@ -219,8 +211,9 @@ class ArmFeedforwardTuning : MarsLinearOpMode() {
         if (isStopRequested) return
 
         // ── Phase 1: Quasistatic forward sweep ───────────────────────────────
-        if (!waitForA(
-                "Phase 1/5 – Move arm to one end of range, then press A to begin forward sweep.",
+        if (
+            !waitForA(
+                "Phase 1/5 – Move arm to one end of range, then press A to begin forward sweep."
             )
         ) {
             return
@@ -234,12 +227,10 @@ class ArmFeedforwardTuning : MarsLinearOpMode() {
         motor.power = 0.0
 
         // ── Phase 2: Quasistatic backward sweep ──────────────────────────────
-        if (!waitForA(
-                String.format(
-                    "Phase 2/5 – Forward sweep done (%d samples). Move arm back, then press A" +
-                        " for reverse sweep.",
-                    samples1,
-                ),
+        if (
+            !waitForA(
+                "Phase 2/5 – Forward sweep done ($samples1 samples). Move arm back, then press A" +
+                    " for reverse sweep."
             )
         ) {
             return
@@ -262,20 +253,16 @@ class ArmFeedforwardTuning : MarsLinearOpMode() {
 
         if (qsN >= 5) {
             // Deep-copy so Gaussian elimination doesn't clobber the accumulators.
-            val A = Array(4) { DoubleArray(4) }
-            val b = DoubleArray(4)
-            for (i in 0 until 4) {
-                b[i] = XtY[i]
-                System.arraycopy(XtX[i], 0, A[i], 0, 4)
-            }
+            val A = Array(4) { i -> XtX[i].copyOf() }
+            val b = XtY.copyOf()
             beta = solveGaussian(A, b)
         }
 
-        if (beta != null) {
-            kS = beta[0]
-            c1 = beta[1]
-            c2 = beta[2]
-            kV = beta[3]
+        beta?.let { b ->
+            kS = b[0]
+            c1 = b[1]
+            c2 = b[2]
+            kV = b[3]
             kG = sqrt(c1 * c1 + c2 * c2)
             phiDeg = Math.toDegrees(atan2(-c2, c1))
 
@@ -283,17 +270,18 @@ class ArmFeedforwardTuning : MarsLinearOpMode() {
             // SST = sumY² − sumY²/n
             // SSE = sumY2 − 2·βᵀ·XᵀY + βᵀ·XᵀX·β
             val sst = qsSumY2 - qsSumY * qsSumY / qsN
-            val sse = qsSumY2 - 2.0 * dot(beta, XtY) + quadForm(beta, XtX)
+            val sse = qsSumY2 - 2.0 * dot(b, XtY) + quadForm(b, XtX)
             rSquared = if (sst == 0.0) 1.0 else 1.0 - sse / sst
         }
 
         // ── Phase 4: Step response for kA ────────────────────────────────────
-        val tauList = ArrayList<Double>()
-        val stepR2List = ArrayList<Double>()
+        val tauList = mutableListOf<Double>()
+        val stepR2List = mutableListOf<Double>()
 
         if (beta != null && kV > 0) {
-            var trial = 0
-            while (trial < PARAMS.STEP_TRIALS && !isStopRequested) {
+            for (trial in 0 until PARAMS.STEP_TRIALS) {
+                if (isStopRequested) break
+
                 // Coast to rest
                 motor.power = 0.0
                 val coastStart = runtime
@@ -312,13 +300,10 @@ class ArmFeedforwardTuning : MarsLinearOpMode() {
                 if (isStopRequested) break
 
                 // Prompt user to position arm near vertical (gravity ≈ 0 → best kA accuracy).
-                if (!waitForA(
-                        String.format(
-                            "Trial %d/%d – Position arm near vertical (gravity ≈ 0), then press" +
-                                " A.",
-                            trial + 1,
-                            PARAMS.STEP_TRIALS,
-                        ),
+                if (
+                    !waitForA(
+                        "Trial ${trial + 1}/${PARAMS.STEP_TRIALS} – Position arm near vertical" +
+                            " (gravity ≈ 0), then press A."
                     )
                 ) {
                     return
@@ -329,10 +314,7 @@ class ArmFeedforwardTuning : MarsLinearOpMode() {
                 val battV0 = batteryVoltage()
 
                 // Gravity-subtracted net voltage and predicted terminal velocity.
-                val vNet =
-                    PARAMS.STEP_FRACTION * battV0 -
-                        c1 * cos(theta0) -
-                        c2 * sin(theta0)
+                val vNet = PARAMS.STEP_FRACTION * battV0 - c1 * cos(theta0) - c2 * sin(theta0)
                 val wInf = (vNet - kS) / kV
 
                 if (wInf <= 0) {
@@ -342,13 +324,12 @@ class ArmFeedforwardTuning : MarsLinearOpMode() {
                         trial + 1,
                         PARAMS.STEP_TRIALS,
                     )
-                    trial++
                     continue
                 }
 
                 // Apply step and record (t, ω).
-                val sampleT = ArrayList<Double>()
-                val sampleW = ArrayList<Double>()
+                val sampleT = mutableListOf<Double>()
+                val sampleW = mutableListOf<Double>()
 
                 val stepStart = runtime
                 motor.power = PARAMS.STEP_FRACTION
@@ -373,11 +354,13 @@ class ArmFeedforwardTuning : MarsLinearOpMode() {
                 motor.power = 0.0
 
                 // Linearized fit: ln(1 − ω/ω_∞) vs t → slope = −1/τ.
-                val regT = ArrayList<Double>()
-                val regY = ArrayList<Double>()
+                val regT = mutableListOf<Double>()
+                val regY = mutableListOf<Double>()
                 for (i in sampleT.indices) {
                     val ratio = sampleW[i] / wInf
-                    if (ratio < PARAMS.OMEGA_LOWER_FRACTION || ratio > PARAMS.OMEGA_UPPER_FRACTION) {
+                    if (
+                        ratio < PARAMS.OMEGA_LOWER_FRACTION || ratio > PARAMS.OMEGA_UPPER_FRACTION
+                    ) {
                         continue
                     }
                     regT.add(sampleT[i])
@@ -385,20 +368,13 @@ class ArmFeedforwardTuning : MarsLinearOpMode() {
                 }
 
                 if (regT.size >= 3) {
-                    val m = regT.size
-                    val tArr = DoubleArray(m)
-                    val yArr = DoubleArray(m)
-                    for (i in 0 until m) {
-                        tArr[i] = regT[i]
-                        yArr[i] = regY[i]
-                    }
-                    val fit = linearRegression(tArr, yArr, m)
+                    val fit =
+                        linearRegression(regT.toDoubleArray(), regY.toDoubleArray(), regT.size)
                     if (fit.slope < 0) {
                         tauList.add(-1.0 / fit.slope)
                         stepR2List.add(fit.rSquared)
                     }
                 }
-                trial++
             }
         }
 
@@ -408,14 +384,8 @@ class ArmFeedforwardTuning : MarsLinearOpMode() {
 
         // Average τ across valid trials → kA.
         val validTrials = tauList.size
-        var avgTau = 0.0
-        var avgStepR2 = 0.0
-        for (tau in tauList) avgTau += tau
-        for (r2 in stepR2List) avgStepR2 += r2
-        if (validTrials > 0) {
-            avgTau /= validTrials
-            avgStepR2 /= validTrials
-        }
+        val avgTau = if (validTrials > 0) tauList.average() else 0.0
+        val avgStepR2 = if (validTrials > 0) stepR2List.average() else 0.0
         val kA = if (beta != null && validTrials > 0) avgTau * kV else 0.0
 
         // ── Phase 5: Results display until stopped ────────────────────────────
@@ -444,7 +414,7 @@ class ArmFeedforwardTuning : MarsLinearOpMode() {
                 telemetry.addData("kA valid trials", "%d / %d", validTrials, PARAMS.STEP_TRIALS)
                 for (i in tauList.indices) {
                     telemetry.addData(
-                        String.format("  Trial %d", i + 1),
+                        "  Trial ${i + 1}",
                         "τ=%.4f s  R²=%.4f",
                         tauList[i],
                         stepR2List[i],
@@ -535,9 +505,9 @@ class ArmFeedforwardTuning : MarsLinearOpMode() {
     // ── Gamepad-A waiter ─────────────────────────────────────────────────────
 
     /**
-     * Loops showing `message` until the A button is pressed (rising edge). Uses
-     * [nextFrame] so bulk is fresh on the frame that returns — safe to read encoders immediately
-     * after (operator may have moved the arm during the wait).
+     * Loops showing `message` until the A button is pressed (rising edge). Uses [nextFrame] so bulk
+     * is fresh on the frame that returns — safe to read encoders immediately after (operator may
+     * have moved the arm during the wait).
      */
     private fun waitForA(message: String): Boolean {
         while (nextFrame()) {

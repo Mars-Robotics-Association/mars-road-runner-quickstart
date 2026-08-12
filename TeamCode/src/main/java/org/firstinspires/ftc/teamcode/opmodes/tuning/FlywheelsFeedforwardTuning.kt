@@ -10,18 +10,20 @@ import kotlin.math.max
 /**
  * Automated feedforward tuner for the dual flywheel shooter.
  *
- * <p>When MOTORS_COUPLED is true, all motors are driven together and velocity is read from
- * motors[0], producing one set of gains. When false, each motor is tuned independently, producing
- * separate kS, kV, kA per motor.
+ * When MOTORS_COUPLED is true, all motors are driven together and velocity is read from motors[0],
+ * producing one set of gains. When false, each motor is tuned independently, producing separate kS,
+ * kV, kA per motor.
  *
- * <p>Procedure (per motor or motor group): 1. Ramps power slowly until the motor(s) overcome
- * stiction (start spinning). 2. Steps from stiction power to full power in NUM_STEPS equal steps.
+ * Procedure (per motor or motor group):
+ * 1. Ramps power slowly until the motor(s) overcome stiction (start spinning).
+ * 2. Steps from stiction power to full power in NUM_STEPS equal steps.
  * 3. At each step, waits SETTLE_TIME_S for the speed to stabilize, then takes NUM_SAMPLES readings
- * of velocity and applied voltage. 4. Fits a line voltage = kS + kV * velocity via least-squares
- * regression. 5. Applies a step input and records the velocity rise curve. Fits ln(1 - w/w_final)
- * vs t to extract the time constant tau, then computes kA = tau * kV. Repeats for
- * STEP_RESPONSE_TRIALS trials. 6. Displays kS, kV, kA, R², and all data points until the OpMode is
- * stopped.
+ *    of velocity and applied voltage.
+ * 4. Fits a line voltage = kS + kV * velocity via least-squares regression.
+ * 5. Applies a step input and records the velocity rise curve. Fits ln(1 - w/w_final) vs t to
+ *    extract the time constant tau, then computes kA = tau * kV. Repeats for STEP_RESPONSE_TRIALS
+ *    trials.
+ * 6. Displays kS, kV, kA, R², and all data points until the OpMode is stopped.
  */
 @Config
 @TeleOp(name = "FlywheelsFeedforwardTuning", group = "Tuning")
@@ -43,14 +45,13 @@ class FlywheelsFeedforwardTuning : FlywheelsTuningBase() {
     }
 
     companion object {
-        @JvmField
-        var PARAMS = Params()
+        @JvmField var PARAMS = Params()
 
-        private class LinRegResult {
-            var slope = 0.0
-            var intercept = 0.0
-            var rSquared = 0.0
-        }
+        private data class LinRegResult(
+            val slope: Double,
+            val intercept: Double,
+            val rSquared: Double,
+        )
 
         private fun linearRegression(x: DoubleArray, y: DoubleArray, n: Int): LinRegResult {
             var sumX = 0.0
@@ -63,38 +64,37 @@ class FlywheelsFeedforwardTuning : FlywheelsTuningBase() {
                 sumXY += x[i] * y[i]
                 sumX2 += x[i] * x[i]
             }
-            val r = LinRegResult()
             val denom = n * sumX2 - sumX * sumX
-            r.slope = (n * sumXY - sumX * sumY) / denom
-            r.intercept = (sumY - r.slope * sumX) / n
+            val slope = (n * sumXY - sumX * sumY) / denom
+            val intercept = (sumY - slope * sumX) / n
 
             val meanY = sumY / n
             var ssRes = 0.0
             var ssTot = 0.0
             for (i in 0 until n) {
-                val predicted = r.intercept + r.slope * x[i]
+                val predicted = intercept + slope * x[i]
                 ssRes += (y[i] - predicted) * (y[i] - predicted)
                 ssTot += (y[i] - meanY) * (y[i] - meanY)
             }
-            r.rSquared = if (ssTot == 0.0) 1.0 else 1.0 - ssRes / ssTot
-            return r
+            val rSquared = if (ssTot == 0.0) 1.0 else 1.0 - ssRes / ssTot
+            return LinRegResult(slope, intercept, rSquared)
         }
     }
 
-    private class TuneResult {
-        lateinit var label: String
-        var kS = 0.0
-        var kV = 0.0
-        var kA = 0.0
-        var rSquared = 0.0
-        var avgStepR2 = 0.0
-        var avgTau = 0.0
-        var validTrials = 0
-        var stictionPower = 0.0
-        var stictionVoltage = 0.0
-        lateinit var avgVelocities: DoubleArray
-        lateinit var avgVoltages: DoubleArray
-    }
+    private data class TuneResult(
+        val label: String,
+        var kS: Double = 0.0,
+        var kV: Double = 0.0,
+        var kA: Double = 0.0,
+        var rSquared: Double = 0.0,
+        var avgStepR2: Double = 0.0,
+        var avgTau: Double = 0.0,
+        var validTrials: Int = 0,
+        var stictionPower: Double = 0.0,
+        var stictionVoltage: Double = 0.0,
+        var avgVelocities: DoubleArray = DoubleArray(0),
+        var avgVoltages: DoubleArray = DoubleArray(0),
+    )
 
     /**
      * Runs a full tuning pass (stiction, steady-state, regression, step response).
@@ -113,8 +113,7 @@ class FlywheelsFeedforwardTuning : FlywheelsTuningBase() {
         passIndex: Int,
         totalPasses: Int,
     ): TuneResult? {
-        val result = TuneResult()
-        result.label = label
+        val result = TuneResult(label = label)
         val steps = max(PARAMS.NUM_STEPS, 2)
 
         // ── Phase 1: find stiction ───────────────────────────────────────────
@@ -125,14 +124,10 @@ class FlywheelsFeedforwardTuning : FlywheelsTuningBase() {
             val now = runtime
             val dt = now - lastTime
             lastTime = now
-            if (dt < 1e-6) {
-                continue
-            }
+            if (dt < 1e-6) continue
 
-            power += PARAMS.STICTION_RAMP_RATE * dt
-            if (power > 1.0) power = 1.0
-
-            for (m in powerMotors) m.power = power
+            power = minOf(power + PARAMS.STICTION_RAMP_RATE * dt, 1.0)
+            powerMotors.forEach { it.power = power }
 
             val velocity = encoder.velocity
 
@@ -148,9 +143,8 @@ class FlywheelsFeedforwardTuning : FlywheelsTuningBase() {
 
             if (power >= 1.0) {
                 if (!isStopRequested) {
-                    for (m in powerMotors) m.power = 0.0
+                    powerMotors.forEach { it.power = 0.0 }
                 }
-                telemetry.addData("ERROR", "Motor never started. Check connections.")
                 while (nextFrame()) {
                     telemetry.addData("ERROR", "Motor never started. Check connections.")
                 }
@@ -166,12 +160,12 @@ class FlywheelsFeedforwardTuning : FlywheelsTuningBase() {
         result.avgVelocities = DoubleArray(steps)
         result.avgVoltages = DoubleArray(steps)
 
-        var step = 0
-        while (step < steps && !isStopRequested) {
-            val stepPower =
-                result.stictionPower + (1.0 - result.stictionPower) * step / (steps - 1)
+        for (step in 0 until steps) {
+            if (isStopRequested) return null
 
-            for (m in powerMotors) m.power = stepPower
+            val stepPower = result.stictionPower + (1.0 - result.stictionPower) * step / (steps - 1)
+
+            powerMotors.forEach { it.power = stepPower }
 
             // settle (deliberate wall-clock wait; live telemetry via nextFrame)
             val settleStart = runtime
@@ -193,8 +187,7 @@ class FlywheelsFeedforwardTuning : FlywheelsTuningBase() {
             var totalVel = 0.0
             var totalV = 0.0
             val samples = max(PARAMS.NUM_SAMPLES, 1)
-            var s = 0
-            while (s < samples && !isStopRequested) {
+            repeat(samples) { s ->
                 if (!nextFrame()) return null
                 val vel = encoder.velocity
                 val battV = batteryVoltage()
@@ -215,17 +208,15 @@ class FlywheelsFeedforwardTuning : FlywheelsTuningBase() {
                 telemetry.addData("Voltage (V)", "%.3f", stepPower * battV)
 
                 sleep(20)
-                s++
             }
 
             result.avgVelocities[step] = totalVel / samples
             result.avgVoltages[step] = totalV / samples
-            step++
         }
 
         if (isStopRequested) return null
 
-        for (m in powerMotors) m.power = 0.0
+        powerMotors.forEach { it.power = 0.0 }
 
         // ── Phase 3: least-squares fit  voltage = kS + kV · velocity ─────────
         val fit = linearRegression(result.avgVelocities, result.avgVoltages, steps)
@@ -237,14 +228,15 @@ class FlywheelsFeedforwardTuning : FlywheelsTuningBase() {
         val stepVoltage = PARAMS.STEP_RESPONSE_POWER * batteryVoltage()
         val wFinal = (stepVoltage - result.kS) / result.kV
 
-        val tauValues = ArrayList<Double>()
-        val stepRSquaredValues = ArrayList<Double>()
+        val tauValues = mutableListOf<Double>()
+        val stepRSquaredValues = mutableListOf<Double>()
 
         if (wFinal > 0) {
-            var trial = 0
-            while (trial < PARAMS.STEP_RESPONSE_TRIALS && !isStopRequested) {
+            for (trial in 0 until PARAMS.STEP_RESPONSE_TRIALS) {
+                if (isStopRequested) break
+
                 // Coast to stop
-                for (m in powerMotors) m.power = 0.0
+                powerMotors.forEach { it.power = 0.0 }
                 val coastStart = runtime
                 while (nextFrame()) {
                     val vel = abs(encoder.velocity)
@@ -264,10 +256,10 @@ class FlywheelsFeedforwardTuning : FlywheelsTuningBase() {
                 sleep(200) // brief pause at rest
 
                 // Apply step and sample
-                val sampleTimes = ArrayList<Double>()
-                val sampleVels = ArrayList<Double>()
+                val sampleTimes = mutableListOf<Double>()
+                val sampleVels = mutableListOf<Double>()
                 val stepStart = runtime
-                for (m in powerMotors) m.power = PARAMS.STEP_RESPONSE_POWER
+                powerMotors.forEach { it.power = PARAMS.STEP_RESPONSE_POWER }
 
                 while (nextFrame() && (runtime - stepStart) < PARAMS.STEP_RESPONSE_MAX_TIME_S) {
                     val t = runtime - stepStart
@@ -288,15 +280,17 @@ class FlywheelsFeedforwardTuning : FlywheelsTuningBase() {
                 }
 
                 if (isStopRequested) break
-                for (m in powerMotors) m.power = 0.0
+                powerMotors.forEach { it.power = 0.0 }
 
                 // Linearized regression: ln(1 - w/w_final) = -t/tau
-                val regT = ArrayList<Double>()
-                val regY = ArrayList<Double>()
+                val regT = mutableListOf<Double>()
+                val regY = mutableListOf<Double>()
 
                 for (i in sampleTimes.indices) {
                     val ratio = sampleVels[i] / wFinal
-                    if (ratio < PARAMS.OMEGA_LOWER_FRACTION || ratio > PARAMS.OMEGA_UPPER_FRACTION) {
+                    if (
+                        ratio < PARAMS.OMEGA_LOWER_FRACTION || ratio > PARAMS.OMEGA_UPPER_FRACTION
+                    ) {
                         continue
                     }
                     regT.add(sampleTimes[i])
@@ -304,30 +298,22 @@ class FlywheelsFeedforwardTuning : FlywheelsTuningBase() {
                 }
 
                 if (regT.size >= 3) {
-                    val n = regT.size
-                    val tArr = DoubleArray(n)
-                    val yArr = DoubleArray(n)
-                    for (i in 0 until n) {
-                        tArr[i] = regT[i]
-                        yArr[i] = regY[i]
-                    }
-                    val stepFit = linearRegression(tArr, yArr, n)
+                    val tArr = regT.toDoubleArray()
+                    val yArr = regY.toDoubleArray()
+                    val stepFit = linearRegression(tArr, yArr, regT.size)
                     if (stepFit.slope < 0) {
                         tauValues.add(-1.0 / stepFit.slope)
                         stepRSquaredValues.add(stepFit.rSquared)
                     }
                 }
-                trial++
             }
         }
 
         // Compute kA from averaged tau
         result.validTrials = tauValues.size
         if (result.validTrials > 0) {
-            for (t in tauValues) result.avgTau += t
-            result.avgTau /= result.validTrials
-            for (r in stepRSquaredValues) result.avgStepR2 += r
-            result.avgStepR2 /= result.validTrials
+            result.avgTau = tauValues.average()
+            result.avgStepR2 = stepRSquaredValues.average()
             result.kA = result.avgTau * result.kV
         }
 
@@ -342,63 +328,55 @@ class FlywheelsFeedforwardTuning : FlywheelsTuningBase() {
         if (isStopRequested) return
 
         val numPasses = if (HARDWARE.MOTORS_COUPLED) 1 else motors.size
-        val results = arrayOfNulls<TuneResult>(numPasses)
+        val results = ArrayList<TuneResult>(numPasses)
 
-        var pass = 0
-        while (pass < numPasses && !isStopRequested) {
-            val label: String
-            val powerMotors: Array<DcMotorEx>
-            val encoder: DcMotorEx
+        for (pass in 0 until numPasses) {
+            if (isStopRequested) return
 
-            if (HARDWARE.MOTORS_COUPLED) {
-                label = "All motors"
-                powerMotors = motors
-                encoder = motors[0]
-            } else {
-                label = HARDWARE.MOTOR_NAMES[pass]
-                powerMotors = arrayOf(motors[pass])
-                encoder = motors[pass]
-            }
+            val (label, powerMotors, encoder) =
+                if (HARDWARE.MOTORS_COUPLED) {
+                    Triple("All motors", motors, motors[0])
+                } else {
+                    Triple(HARDWARE.MOTOR_NAMES[pass], arrayOf(motors[pass]), motors[pass])
+                }
 
-            results[pass] = runTuningPass(label, powerMotors, encoder, pass, numPasses)
-            if (results[pass] == null) return
-            pass++
+            val result = runTuningPass(label, powerMotors, encoder, pass, numPasses) ?: return
+            results.add(result)
         }
 
         // ── Display results until stopped ────────────────────────────────────
         while (nextFrame()) {
-            for (p in 0 until numPasses) {
-                val r = results[p]!!
-                val pfx = if (numPasses > 1) r.label + " " else ""
-                telemetry.addData("── " + r.label + " RESULTS ──", "")
-                telemetry.addData(pfx + "kS", "%.4f V", r.kS)
-                telemetry.addData(pfx + "kV", "%.6f V·s/tick", r.kV)
+            for (r in results) {
+                val pfx = if (results.size > 1) "${r.label} " else ""
+                telemetry.addData("── ${r.label} RESULTS ──", "")
+                telemetry.addData("${pfx}kS", "%.4f V", r.kS)
+                telemetry.addData("${pfx}kV", "%.6f V·s/tick", r.kV)
                 if (r.validTrials > 0) {
-                    telemetry.addData(pfx + "kA", "%.6f V·s²/tick", r.kA)
-                    telemetry.addData(pfx + "tau", "%.4f s", r.avgTau)
-                    telemetry.addData(pfx + "kA R²", "%.6f", r.avgStepR2)
+                    telemetry.addData("${pfx}kA", "%.6f V·s²/tick", r.kA)
+                    telemetry.addData("${pfx}tau", "%.4f s", r.avgTau)
+                    telemetry.addData("${pfx}kA R²", "%.6f", r.avgStepR2)
                     telemetry.addData(
-                        pfx + "kA valid trials",
+                        "${pfx}kA valid trials",
                         "%d / %d",
                         r.validTrials,
                         PARAMS.STEP_RESPONSE_TRIALS,
                     )
                 } else {
-                    telemetry.addData(pfx + "kA", "FAILED – no valid trials")
+                    telemetry.addData("${pfx}kA", "FAILED – no valid trials")
                 }
-                telemetry.addData(pfx + "kS/kV R²", "%.6f", r.rSquared)
-                telemetry.addData(pfx + "stiction power", "%.4f", r.stictionPower)
-                telemetry.addData(pfx + "stiction voltage", "%.3f V", r.stictionVoltage)
+                telemetry.addData("${pfx}kS/kV R²", "%.6f", r.rSquared)
+                telemetry.addData("${pfx}stiction power", "%.4f", r.stictionPower)
+                telemetry.addData("${pfx}stiction voltage", "%.3f V", r.stictionVoltage)
                 telemetry.addLine("")
-                telemetry.addData("── " + r.label + " PASTE ──", "")
-                telemetry.addData(pfx + "  kS =", "%.4f", r.kS)
-                telemetry.addData(pfx + "  kV =", "%.6f", r.kV)
-                telemetry.addData(pfx + "  kA =", "%.6f", r.kA)
+                telemetry.addData("── ${r.label} PASTE ──", "")
+                telemetry.addData("${pfx}  kS =", "%.4f", r.kS)
+                telemetry.addData("${pfx}  kV =", "%.6f", r.kV)
+                telemetry.addData("${pfx}  kA =", "%.6f", r.kA)
                 telemetry.addLine("")
-                telemetry.addData("── " + r.label + " DATA POINTS ──", "")
+                telemetry.addData("── ${r.label} DATA POINTS ──", "")
                 for (i in r.avgVelocities.indices) {
                     telemetry.addData(
-                        String.format("%sStep %d", pfx, i + 1),
+                        "${pfx}Step ${i + 1}",
                         "%.1f tps @ %.3f V",
                         r.avgVelocities[i],
                         r.avgVoltages[i],

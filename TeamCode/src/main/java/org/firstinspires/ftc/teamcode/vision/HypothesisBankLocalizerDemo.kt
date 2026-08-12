@@ -1,7 +1,5 @@
 package org.firstinspires.ftc.teamcode.vision
 
-import com.acmerobotics.dashboard.canvas.Canvas
-import com.acmerobotics.dashboard.telemetry.TelemetryPacket
 import com.acmerobotics.roadrunner.Pose2d
 import com.acmerobotics.roadrunner.PoseVelocity2d
 import com.acmerobotics.roadrunner.Vector2d
@@ -58,21 +56,22 @@ class HypothesisBankLocalizerDemo : MarsLinearOpMode() {
 
         waitForStart()
 
-        var prevY = false
         while (nextFrame()) {
             // The vision localizer owns the odometry update this loop (do NOT also call
             // drive.updatePoseEstimate(), which would double-update the same localizer).
             localizer.update()
             val pose = localizer.getPose()
 
-            if (gamepad1.y && !prevY) {
+            if (gamepad1.yWasPressed()) {
                 localizer.setPose(startPose)
             }
-            prevY = gamepad1.y
 
             drive.setDrivePowers(
                 PoseVelocity2d(
-                    Vector2d((-gamepad1.left_stick_y).toDouble(), (-gamepad1.left_stick_x).toDouble()),
+                    Vector2d(
+                        (-gamepad1.left_stick_y).toDouble(),
+                        (-gamepad1.left_stick_x).toDouble(),
+                    ),
                     (-gamepad1.right_stick_x).toDouble(),
                 )
             )
@@ -83,9 +82,8 @@ class HypothesisBankLocalizerDemo : MarsLinearOpMode() {
             telemetry.addData("committed", localizer.isCommitted())
             telemetry.addData("dominant weight", "%.2f", localizer.dominantWeight())
 
-            val packet: TelemetryPacket? = dashboardPacket()
-            if (packet != null) {
-                val c: Canvas = packet.fieldOverlay()
+            dashboardPacket()?.let { packet ->
+                val c = packet.fieldOverlay()
                 c.setStroke("#4CAF50")
                 Drawing.drawRobot(c, pose)
             }
@@ -98,11 +96,8 @@ class HypothesisBankLocalizerDemo : MarsLinearOpMode() {
 
     companion object {
         // Starting field pose (inches, degrees). The bank seeds here and refines from vision.
-        @JvmField
-        var START_X = 0.0
-        @JvmField
-        var START_Y = 0.0
-        @JvmField
-        var START_HEADING_DEG = 0.0
+        @JvmField var START_X = 0.0
+        @JvmField var START_Y = 0.0
+        @JvmField var START_HEADING_DEG = 0.0
     }
 }

@@ -289,12 +289,16 @@ if [[ $goto_summary -eq 0 ]]; then
       fi
     done < <(git config --file .gitmodules --get-regexp 'submodule\..*\.path' 2>/dev/null | awk '{print $2}')
 
-  echo "[7/8] Git hooks / Java formatter..."
+  echo "[7/8] Git hooks / formatters..."
     # Pin GJF to a release that runs on JDK 17 (project sourceCompatibility). 1.29+
     # references JCTree$JCAnyPattern and fails on Java 17 with NoClassDefFoundError.
+    # ktfmt is based on google-java-format; --kotlinlang-style uses 4-space indent (pairs with GJF --aosp).
     GJF_VERSION="1.28.0"
     GJF_JAR="$HOME/.githooks/google-java-format.jar"
     GJF_URL="https://github.com/google/google-java-format/releases/download/v${GJF_VERSION}/google-java-format-${GJF_VERSION}-all-deps.jar"
+    KTFMT_VERSION="0.64"
+    KTFMT_JAR="$HOME/.githooks/ktfmt.jar"
+    KTFMT_URL="https://github.com/Kotlin/ktfmt/releases/download/v${KTFMT_VERSION}/ktfmt-${KTFMT_VERSION}-with-dependencies.jar"
     git config core.hooksPath .githooks
     git update-index --chmod=+x .githooks/pre-commit 2>/dev/null || true
     chmod +x .githooks/pre-commit 2>/dev/null || true
@@ -307,6 +311,45 @@ if [[ $goto_summary -eq 0 ]]; then
         | java -jar "$jar" --aosp - >/dev/null 2>&1
     }
 
+    ktfmt_probe_ok() {
+      local jar="$1"
+      [[ -f "$jar" ]] || return 1
+      command -v java >/dev/null 2>&1 || return 1
+      echo 'fun main(){val x=1}' \
+        | java -jar "$jar" --kotlinlang-style - >/dev/null 2>&1
+    }
+
+    offer_download() {
+      # $1=label $2=version $3=jar_path $4=url $5=probe_fn_name
+      local label="$1" version="$2" jar="$3" url="$4" probe_fn="$5"
+      if command -v curl >/dev/null 2>&1; then
+        read -r -p "             Download ${label} ${version} now? [Y/N] " DL_CHOICE
+        if [[ "$DL_CHOICE" == "Y" || "$DL_CHOICE" == "y" ]]; then
+          mkdir -p "$HOME/.githooks"
+          if curl -fsSL -o "$jar" "$url"; then
+            if "$probe_fn" "$jar"; then
+              echo "      [OK]   Installed ${label} ${version}"
+            else
+              echo "      [WARN] Downloaded ${label} still fails under $(java -version 2>&1 | head -1)"
+              echo "             Need Java 17+ on PATH for the pre-commit hook."
+              WARNINGS=$((WARNINGS+1))
+            fi
+          else
+            echo "      [WARN] Download failed -- install manually:"
+            echo "             $url"
+            WARNINGS=$((WARNINGS+1))
+          fi
+        else
+          echo "             Pre-commit ${label} formatting will fail until a compatible jar is installed"
+          WARNINGS=$((WARNINGS+1))
+        fi
+      else
+        echo "             Install curl, or download manually:"
+        echo "             $url"
+        WARNINGS=$((WARNINGS+1))
+      fi
+    }
+
     need_gjf_install=0
     if [[ ! -f "$GJF_JAR" ]]; then
       echo "      [WARN] google-java-format.jar not found at $GJF_JAR"
@@ -316,36 +359,31 @@ if [[ $goto_summary -eq 0 ]]; then
       echo "             (common with GJF 1.29+ on JDK 17). Will offer pinned v${GJF_VERSION}."
       need_gjf_install=1
     else
-      echo "      [OK]   pre-commit hook configured (google-java-format works with this Java)"
+      echo "      [OK]   google-java-format ${GJF_VERSION} (Java, AOSP)"
     fi
 
     if [[ "$need_gjf_install" -eq 1 ]]; then
-      if command -v curl >/dev/null 2>&1; then
-        read -r -p "             Download google-java-format ${GJF_VERSION} now? [Y/N] " DL_CHOICE
-        if [[ "$DL_CHOICE" == "Y" || "$DL_CHOICE" == "y" ]]; then
-          mkdir -p "$HOME/.githooks"
-          if curl -fsSL -o "$GJF_JAR" "$GJF_URL"; then
-            if gjf_probe_ok "$GJF_JAR"; then
-              echo "      [OK]   Installed google-java-format ${GJF_VERSION}"
-            else
-              echo "      [WARN] Downloaded jar still fails under $(java -version 2>&1 | head -1)"
-              echo "             Need Java 17+ on PATH for the pre-commit hook."
-              WARNINGS=$((WARNINGS+1))
-            fi
-          else
-            echo "      [WARN] Download failed -- install manually:"
-            echo "             $GJF_URL"
-            WARNINGS=$((WARNINGS+1))
-          fi
-        else
-          echo "             Pre-commit Java formatting will fail until a compatible jar is installed"
-          WARNINGS=$((WARNINGS+1))
-        fi
-      else
-        echo "             Install curl, or download manually:"
-        echo "             $GJF_URL"
-        WARNINGS=$((WARNINGS+1))
-      fi
+      offer_download "google-java-format" "$GJF_VERSION" "$GJF_JAR" "$GJF_URL" gjf_probe_ok
+    fi
+
+    need_ktfmt_install=0
+    if [[ ! -f "$KTFMT_JAR" ]]; then
+      echo "      [WARN] ktfmt.jar not found at $KTFMT_JAR"
+      need_ktfmt_install=1
+    elif ! ktfmt_probe_ok "$KTFMT_JAR"; then
+      echo "      [WARN] $KTFMT_JAR is incompatible with the current Java runtime"
+      echo "             Will offer pinned v${KTFMT_VERSION}."
+      need_ktfmt_install=1
+    else
+      echo "      [OK]   ktfmt ${KTFMT_VERSION} (Kotlin, kotlinlang-style)"
+    fi
+
+    if [[ "$need_ktfmt_install" -eq 1 ]]; then
+      offer_download "ktfmt" "$KTFMT_VERSION" "$KTFMT_JAR" "$KTFMT_URL" ktfmt_probe_ok
+    fi
+
+    if [[ "$need_gjf_install" -eq 0 && "$need_ktfmt_install" -eq 0 ]]; then
+      echo "      [OK]   pre-commit hook configured (core.hooksPath=.githooks)"
     fi
   fi
 

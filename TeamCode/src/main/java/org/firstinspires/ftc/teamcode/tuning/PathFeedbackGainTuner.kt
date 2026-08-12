@@ -13,13 +13,6 @@ import com.acmerobotics.roadrunner.Time
 import com.acmerobotics.roadrunner.TimeTrajectory
 import com.acmerobotics.roadrunner.Vector2d
 import com.qualcomm.robotcore.util.ElapsedTime
-import org.firstinspires.ftc.robotcore.external.Telemetry
-import org.firstinspires.ftc.teamcode.MecanumDrive
-import org.firstinspires.ftc.teamcode.ThreeDeadWheelLocalizer
-import org.firstinspires.ftc.teamcode.TwoDeadWheelLocalizer
-import org.firstinspires.ftc.teamcode.opmodes.base.MarsLinearOpMode
-import org.firstinspires.ftc.teamcode.utils.CsvLogger
-import org.firstinspires.ftc.teamcode.utils.GatedTelemetry
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -29,6 +22,13 @@ import kotlin.math.hypot
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.sqrt
+import org.firstinspires.ftc.robotcore.external.Telemetry
+import org.firstinspires.ftc.teamcode.MecanumDrive
+import org.firstinspires.ftc.teamcode.ThreeDeadWheelLocalizer
+import org.firstinspires.ftc.teamcode.TwoDeadWheelLocalizer
+import org.firstinspires.ftc.teamcode.opmodes.base.MarsLinearOpMode
+import org.firstinspires.ftc.teamcode.utils.CsvLogger
+import org.firstinspires.ftc.teamcode.utils.GatedTelemetry
 
 /**
  * ManualFeedback-style automatic gain search: long line paths, discrete position-gain ladder, back
@@ -42,8 +42,9 @@ import kotlin.math.sqrt
  *    walk the out-and-back into the near wall.
  * 2. **Heading** — same path, axial locked at its best. Ladder `headingGain`.
  * 3. **Lateral** — return near field home, turn to [LATERAL_HEADING_RAD] (default 90°), then
- *    out-and-back on the same field-X strip via `strafeToConstantHeading` (not `lineToX` — RR lineToX
- *    follows path tangent, so at 90° it drives field ±Y = robot reverse). Ladder `lateralGain`.
+ *    out-and-back on the same field-X strip via `strafeToConstantHeading` (not `lineToX` — RR
+ *    lineToX follows path tangent, so at 90° it drives field ±Y = robot reverse). Ladder
+ *    `lateralGain`.
  *
  * Reusing the field-X corridor after a 90° turn avoids needing a second long strip of floor:
  * strafe-to keeps heading while the position target moves along field X.
@@ -55,9 +56,9 @@ import kotlin.math.sqrt
  * straight corridor of about `DISTANCE + 12` inches and room to spin in place at the start.
  * Production feedforward path via [MecanumDrive.setDriveCommand].
  *
- * On finish, writes gains into live `MecanumDrive.PARAMS`, then drives back to the OpMode start pose
- * and heading so the next run can begin without re-staging. Optional CSVs: `path_fbgain_samples_*` /
- * `path_fbgain_summary_*`. Pull with `telemetry/pull.sh`.
+ * On finish, writes gains into live `MecanumDrive.PARAMS`, then drives back to the OpMode start
+ * pose and heading so the next run can begin without re-staging. Optional CSVs:
+ * `path_fbgain_samples_*` / `path_fbgain_summary_*`. Pull with `telemetry/pull.sh`.
  */
 @Config
 class PathFeedbackGainTuner : MarsLinearOpMode() {
@@ -86,27 +87,19 @@ class PathFeedbackGainTuner : MarsLinearOpMode() {
     )
 
     /** Metrics accumulated over one or more trajectory legs at a fixed gain. */
-    private class PathMetrics(
-        @JvmField val axisUnderTest: Axis,
-    ) {
-        @JvmField
-        var samples = 0
+    private class PathMetrics(@JvmField val axisUnderTest: Axis) {
+        @JvmField var samples = 0
 
-        @JvmField
-        var durationS = 0.0
+        @JvmField var durationS = 0.0
 
         /** Time spent in the low-ref-speed chatter window (for flip rates / diagnostics). */
-        @JvmField
-        var chatterWindowS = 0.0
+        @JvmField var chatterWindowS = 0.0
 
-        @JvmField
-        var axialCmdFlips = 0
+        @JvmField var axialCmdFlips = 0
 
-        @JvmField
-        var lateralCmdFlips = 0
+        @JvmField var lateralCmdFlips = 0
 
-        @JvmField
-        var headingCmdFlips = 0
+        @JvmField var headingCmdFlips = 0
 
         private var lastAxSign = 0
         private var lastLatSign = 0
@@ -128,8 +121,7 @@ class PathFeedbackGainTuner : MarsLinearOpMode() {
         private var prevDCmdH = Double.NaN
 
         /** Mid-path stop-then-go events on the axis under test (high gain fighting the profile). */
-        @JvmField
-        var hesitations = 0
+        @JvmField var hesitations = 0
 
         /** 0 = cruising, 1 = saw near-stop mid-path (waiting for re-accel). */
         private var hesitationState = 0
@@ -139,8 +131,8 @@ class PathFeedbackGainTuner : MarsLinearOpMode() {
          * only when `scoreChatter` — low reference speed (see [CHATTER_REF_SPEED]).
          *
          * @param remainingAlongPath distance still short of the traj end along the path (inches for
-         *     translation axes, rad for heading). Near-stops past the target (negative remaining) do
-         *     not arm hesitation.
+         *   translation axes, rad for heading). Near-stops past the target (negative remaining) do
+         *   not arm hesitation.
          */
         fun observe(
             dt: Double,
@@ -164,9 +156,11 @@ class PathFeedbackGainTuner : MarsLinearOpMode() {
             // Late-path stop-short-then-lunge (independent of low-speed chatter window).
             if (progress01 >= HESITATION_PROGRESS_MIN && progress01 <= HESITATION_PROGRESS_MAX) {
                 val vSlow =
-                    if (axisUnderTest == Axis.HEADING) HESITATION_V_SLOW_HEADING else HESITATION_V_SLOW
+                    if (axisUnderTest == Axis.HEADING) HESITATION_V_SLOW_HEADING
+                    else HESITATION_V_SLOW
                 val vFast =
-                    if (axisUnderTest == Axis.HEADING) HESITATION_V_FAST_HEADING else HESITATION_V_FAST
+                    if (axisUnderTest == Axis.HEADING) HESITATION_V_FAST_HEADING
+                    else HESITATION_V_FAST
                 val remMin =
                     if (axisUnderTest == Axis.HEADING) {
                         HESITATION_REMAINING_MIN_HEADING
@@ -295,183 +289,153 @@ class PathFeedbackGainTuner : MarsLinearOpMode() {
 
     companion object {
         /** When false, skip writing CSVs. */
-        @JvmField
-        var LOG_CSV = true
+        @JvmField var LOG_CSV = true
 
-        @JvmField
-        var LOG_FLUSH_EVERY = 256
+        @JvmField var LOG_FLUSH_EVERY = 256
 
         /** Out-and-back distance, inches — same default as [ManualFeedbackTuner.DISTANCE]. */
-        @JvmField
-        var DISTANCE = 64.0
+        @JvmField var DISTANCE = 64.0
 
         /** Complete out-and-back cycles at each gain step before deciding clean vs chatter. */
-        @JvmField
-        var CYCLES = 2
+        @JvmField var CYCLES = 2
 
         /** First position gain tried for the axis under test. */
-        @JvmField
-        var START_GAIN = 2.0
+        @JvmField var START_GAIN = 2.0
 
         /**
          * Position gain ceiling (inclusive). Field experience on this chassis: axial ~4–5 is the
          * quiet sweet spot before stop-then-lunge; audible thrash starts around ~10. Ceiling is
          * above that so the ladder can find the edge and back off.
          */
-        @JvmField
-        var MAX_GAIN = 12.0
+        @JvmField var MAX_GAIN = 12.0
 
         /** Position gain increment after a clean step. */
-        @JvmField
-        var GAIN_STEP = 1.0
+        @JvmField var GAIN_STEP = 1.0
 
         /**
          * Heading position gain while the axial ladder runs. Soft enough not to thrash, strong
          * enough to keep the line from curling. 2 was too weak on this chassis (line wanders); 4
          * matches the production default. Replaced by the heading-phase result afterward.
          */
-        @JvmField
-        var HOLD_HEADING_GAIN = 4.0
+        @JvmField var HOLD_HEADING_GAIN = 4.0
 
         /**
          * First heading gain tried in the heading phase. Higher than [START_GAIN]: 2 felt limp for
          * yaw hold on long paths, and a false soft-edge at 2 used to strand the ladder there.
          */
-        @JvmField
-        var HEADING_START_GAIN = 3.0
+        @JvmField var HEADING_START_GAIN = 3.0
 
         /**
          * When true, after axial+heading: home, turn to [LATERAL_HEADING_RAD], and ladder
          * lateralGain on the same field-X corridor (constant heading = pure strafe).
          */
-        @JvmField
-        var TUNE_LATERAL = true
+        @JvmField var TUNE_LATERAL = true
 
         /**
          * Field heading (rad) for the lateral phase. Default `π/2`: robot faces +Y while
          * lineToXConstantHeading still travels field X → robot-frame lateral motion on the same
          * strip.
          */
-        @JvmField
-        var LATERAL_HEADING_RAD = Math.PI / 2.0
+        @JvmField var LATERAL_HEADING_RAD = Math.PI / 2.0
 
         /** Velocity gains for all axes (default 0 — D amplifies Pinpoint noise on long paths). */
-        @JvmField
-        var VEL_GAIN = 0.0
+        @JvmField var VEL_GAIN = 0.0
 
         /**
          * Absolute axial command sign flips (low-speed window only) over a full gain step before
          * hard reject. Quiet gains (2–8) should stay near 0 flips; real thrash near ~10 produces
          * many. Raw command "jerk" is logged only — profile decel makes it huge even when quiet.
          */
-        @JvmField
-        var MAX_AXIAL_CMD_FLIPS = 16
+        @JvmField var MAX_AXIAL_CMD_FLIPS = 16
 
-        @JvmField
-        var MAX_LATERAL_CMD_FLIPS = 18
+        @JvmField var MAX_LATERAL_CMD_FLIPS = 18
 
-        @JvmField
-        var MAX_HEADING_CMD_FLIPS = 16
+        @JvmField var MAX_HEADING_CMD_FLIPS = 16
 
         /**
          * Soft edge: flip count at or above this fraction of the hard max stops the ladder (even
-         * without a hard reject). The edge gain itself is *not* kept — we back off to the last fully
-         * clean step so companion phases (heading/lateral) are not poisoned by a stop-then-lunge
-         * axial. Kept high so mild noise at 3–5 does not freeze the ladder early.
+         * without a hard reject). The edge gain itself is *not* kept — we back off to the last
+         * fully clean step so companion phases (heading/lateral) are not poisoned by a
+         * stop-then-lunge axial. Kept high so mild noise at 3–5 does not freeze the ladder early.
          */
-        @JvmField
-        var EDGE_FRAC = 0.75
+        @JvmField var EDGE_FRAC = 0.75
 
         /** |cmd| below this does not count toward axial/lateral command sign flips (in/s). */
-        @JvmField
-        var TRANS_CMD_FLIP_DEADBAND = 3.0
+        @JvmField var TRANS_CMD_FLIP_DEADBAND = 3.0
 
         /** |cmd| below this does not count toward heading command sign flips (rad/s). */
-        @JvmField
-        var HEADING_CMD_FLIP_DEADBAND = 0.25
+        @JvmField var HEADING_CMD_FLIP_DEADBAND = 0.25
 
         /**
          * Only score command chatter while the trajectory reference speed is below this (in/s).
          * Cruise and planned accel/decel are ignored; thrash shows up when the profile has nearly
          * stopped.
          */
-        @JvmField
-        var CHATTER_REF_SPEED = 6.0
+        @JvmField var CHATTER_REF_SPEED = 6.0
 
         /** Same idea for reference angular rate (rad/s) when scoring heading chatter. */
-        @JvmField
-        var CHATTER_REF_OMEGA = 0.35
+        @JvmField var CHATTER_REF_OMEGA = 0.35
 
         /**
          * Terminal hesitation: while still short of the path end, axis speed falls below
          * [HESITATION_V_SLOW] then rises above [HESITATION_V_FAST] again (progress in
          * [[HESITATION_PROGRESS_MIN], [HESITATION_PROGRESS_MAX]]). That is the high-gain "brake,
-         * stop short, then lunge" before reverse (axial ≥6 on this chassis; by-eye sweet spot ~4–5).
+         * stop short, then lunge" before reverse (axial ≥6 on this chassis; by-eye sweet spot
+         * ~4–5).
          *
          * Arming only when remaining path distance ≥ [HESITATION_REMAINING_MIN] avoids counting
          * low-gain overshoot recovery (past the target) as hesitation. Soft-edge backs off to the
          * last fully clean gain; hard-reject at this many events.
          */
-        @JvmField
-        var MAX_HESITATIONS_REJECT = 3
+        @JvmField var MAX_HESITATIONS_REJECT = 3
 
         /**
          * Soft-edge when hesitation count reaches this. Ladder stops and keeps the *previous* fully
          * clean gain (not this edge step). 2 allows a single mild re-lunge at the sweet spot (~5)
          * while still rejecting clear stop-then-go at ~6+.
          */
-        @JvmField
-        var MAX_HESITATIONS_EDGE = 2
+        @JvmField var MAX_HESITATIONS_EDGE = 2
 
         /** Fraction of trajectory duration treated as late-path for hesitation scoring. */
-        @JvmField
-        var HESITATION_PROGRESS_MIN = 0.55
+        @JvmField var HESITATION_PROGRESS_MIN = 0.55
 
         /**
          * Include late terminal re-lunge (stop short then catch residual error before reverse). Was
          * 0.90, which missed re-accels that only peak after ~92% of the leg.
          */
-        @JvmField
-        var HESITATION_PROGRESS_MAX = 0.95
+        @JvmField var HESITATION_PROGRESS_MAX = 0.95
 
         /** |axis velocity| below this (in/s or rad/s) counts as a near-stop for hesitation. */
-        @JvmField
-        var HESITATION_V_SLOW = 5.0
+        @JvmField var HESITATION_V_SLOW = 5.0
 
         /**
          * |axis velocity| above this after a near-stop counts as a re-accel hesitation. 12 was too
-         * high — mild stop-then-go at axial ~6 only re-accelerates to ~8–10 in/s and looked clean to
-         * the counter while still feeling wrong by eye.
+         * high — mild stop-then-go at axial ~6 only re-accelerates to ~8–10 in/s and looked clean
+         * to the counter while still feeling wrong by eye.
          */
-        @JvmField
-        var HESITATION_V_FAST = 8.0
+        @JvmField var HESITATION_V_FAST = 8.0
 
         /**
          * Only arm a hesitation near-stop when this much path distance remains to the traj endpoint
          * (inches). Positive remaining = still short of the end along the path direction. Filters
          * out low-gain overshoot recovery past the target.
          */
-        @JvmField
-        var HESITATION_REMAINING_MIN = 1.5
+        @JvmField var HESITATION_REMAINING_MIN = 1.5
 
         /** Heading uses smaller velocity thresholds (rad/s). */
-        @JvmField
-        var HESITATION_V_SLOW_HEADING = 0.15
+        @JvmField var HESITATION_V_SLOW_HEADING = 0.15
 
-        @JvmField
-        var HESITATION_V_FAST_HEADING = 0.35
+        @JvmField var HESITATION_V_FAST_HEADING = 0.35
 
         /** Heading remaining (rad) required to arm a heading hesitation near-stop. */
-        @JvmField
-        var HESITATION_REMAINING_MIN_HEADING = 0.05
+        @JvmField var HESITATION_REMAINING_MIN_HEADING = 0.05
 
         /**
          * How often to refresh DS / Dashboard status during long `nextSample()` path loops (ms).
-         * Those loops close gated telemetry by default, which freezes the last pre-step line for the
-         * whole out-and-back (~10 s per gain) unless we open and flush periodically.
+         * Those loops close gated telemetry by default, which freezes the last pre-step line for
+         * the whole out-and-back (~10 s per gain) unless we open and flush periodically.
          */
-        @JvmField
-        var STATUS_MS = 250
+        @JvmField var STATUS_MS = 250
 
         private const val SAMPLE_HEADER =
             "t_s,axis,gain,cycle,leg,pose_x,pose_y,pose_h,ref_x,ref_y,ref_h," +
@@ -535,31 +499,33 @@ class PathFeedbackGainTuner : MarsLinearOpMode() {
         }
 
         private fun requirePositive(kV: Double, kA: Double) {
-            if (kV <= 0 || kA <= 0) {
-                throw RuntimeException(
-                    "PathFeedbackGainTuner needs positive kV and kA. Run AxialFeedforwardTuner" +
-                        " first.",
-                )
+            require(kV > 0 && kA > 0) {
+                "PathFeedbackGainTuner needs positive kV and kA. Run AxialFeedforwardTuner first."
             }
         }
 
         private fun checkDeadWheels(localizer: Any) {
-            if (localizer is TwoDeadWheelLocalizer) {
-                if (TwoDeadWheelLocalizer.PARAMS.perpXTicks == 0.0 &&
-                    TwoDeadWheelLocalizer.PARAMS.parYTicks == 0.0
-                ) {
-                    throw RuntimeException(
-                        "Odometry wheel locations not set! Run AngularRampLogger to tune them.",
-                    )
+            when (localizer) {
+                is TwoDeadWheelLocalizer -> {
+                    if (
+                        TwoDeadWheelLocalizer.PARAMS.perpXTicks == 0.0 &&
+                            TwoDeadWheelLocalizer.PARAMS.parYTicks == 0.0
+                    ) {
+                        error(
+                            "Odometry wheel locations not set! Run AngularRampLogger to tune them."
+                        )
+                    }
                 }
-            } else if (localizer is ThreeDeadWheelLocalizer) {
-                if (ThreeDeadWheelLocalizer.PARAMS.perpXTicks == 0.0 &&
-                    ThreeDeadWheelLocalizer.PARAMS.par0YTicks == 0.0 &&
-                    ThreeDeadWheelLocalizer.PARAMS.par1YTicks == 1.0
-                ) {
-                    throw RuntimeException(
-                        "Odometry wheel locations not set! Run AngularRampLogger to tune them.",
-                    )
+                is ThreeDeadWheelLocalizer -> {
+                    if (
+                        ThreeDeadWheelLocalizer.PARAMS.perpXTicks == 0.0 &&
+                            ThreeDeadWheelLocalizer.PARAMS.par0YTicks == 0.0 &&
+                            ThreeDeadWheelLocalizer.PARAMS.par1YTicks == 1.0
+                    ) {
+                        error(
+                            "Odometry wheel locations not set! Run AngularRampLogger to tune them."
+                        )
+                    }
                 }
             }
         }
@@ -595,7 +561,7 @@ class PathFeedbackGainTuner : MarsLinearOpMode() {
         }
 
         val drive =
-            MecanumDrive.forMarsLinear(hardwareMap, Pose2d(0.0, 0.0, 0.0), this::batteryVoltage)
+            MecanumDrive.forMarsLinear(hardwareMap, Pose2d(0.0, 0.0, 0.0)) { batteryVoltage() }
         checkDeadWheels(drive.localizer)
         requirePositive(MecanumDrive.PARAMS.kV, MecanumDrive.PARAMS.kA)
 
@@ -608,7 +574,7 @@ class PathFeedbackGainTuner : MarsLinearOpMode() {
                 "Corridor: ~%.0f in on field X. %d cycle(s) per gain.",
                 DISTANCE + 12.0,
                 CYCLES,
-            ),
+            )
         )
         telem!!.addLine(
             String.format(
@@ -616,7 +582,7 @@ class PathFeedbackGainTuner : MarsLinearOpMode() {
                 "1) axial  2) heading  3) home+turn %.0f° + lateral (TUNE_LATERAL=%s)",
                 Math.toDegrees(LATERAL_HEADING_RAD),
                 TUNE_LATERAL,
-            ),
+            )
         )
         telem!!.addLine(
             String.format(
@@ -626,7 +592,7 @@ class PathFeedbackGainTuner : MarsLinearOpMode() {
                 MAX_GAIN,
                 GAIN_STEP,
                 VEL_GAIN,
-            ),
+            )
         )
         if (sampleLog != null) {
             telem!!.addData("sample log", sampleLog!!.fileName())
@@ -790,7 +756,8 @@ class PathFeedbackGainTuner : MarsLinearOpMode() {
         logGain = 0.0
         logCycle = 0
         val path =
-            drive.actionBuilder(here)
+            drive
+                .actionBuilder(here)
                 .strafeToConstantHeading(Vector2d(x, y))
                 .turnTo(headingRad)
                 .build()
@@ -847,7 +814,8 @@ class PathFeedbackGainTuner : MarsLinearOpMode() {
                 if (chatter) {
                     if (metrics.hesitations >= MAX_HESITATIONS_REJECT) "hesitation" else "chatter"
                 } else if (edge) {
-                    if (metrics.hesitations >= MAX_HESITATIONS_EDGE) "edge_hesitation" else "edge_keep"
+                    if (metrics.hesitations >= MAX_HESITATIONS_EDGE) "edge_hesitation"
+                    else "edge_keep"
                 } else {
                     "clean"
                 }
@@ -1022,11 +990,13 @@ class PathFeedbackGainTuner : MarsLinearOpMode() {
 
             val path: Action =
                 if (pathMode == PathMode.LATERAL_LINE) {
-                    // Do NOT use lineToX* here: RR lineToX goes along path tangent until x=target, so
+                    // Do NOT use lineToX* here: RR lineToX goes along path tangent until x=target,
+                    // so
                     // with heading ≈ 90° the segment is almost field ±Y (robot reverse), not a
                     // strafe. Explicit field-XY endpoints + constant heading = pure robot-lateral
                     // on the strip.
-                    drive.actionBuilder(begin)
+                    drive
+                        .actionBuilder(begin)
                         .strafeToConstantHeading(Vector2d(xFar, yHome))
                         .strafeToConstantHeading(Vector2d(xNear, yHome))
                         .build()
@@ -1231,9 +1201,8 @@ class PathFeedbackGainTuner : MarsLinearOpMode() {
             return
         }
         val nowNs = System.nanoTime()
-        if (STATUS_MS > 0 &&
-            lastStatusNs != 0L &&
-            (nowNs - lastStatusNs) < STATUS_MS * 1_000_000L
+        if (
+            STATUS_MS > 0 && lastStatusNs != 0L && (nowNs - lastStatusNs) < STATUS_MS * 1_000_000L
         ) {
             return
         }

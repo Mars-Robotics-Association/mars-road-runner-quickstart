@@ -369,16 +369,21 @@ for /f "tokens=2" %%P in ('git config --file .gitmodules --get-regexp "submodule
 )
 
 :: ============================================================
-:: CHECK 7/8: Git hooks / Java formatter
+:: CHECK 7/8: Git hooks / formatters (Java + Kotlin)
 :: ============================================================
 :: Pin GJF to a release that runs on JDK 17 (project sourceCompatibility).
 :: 1.29+ fails on Java 17 with NoClassDefFoundError: JCTree$JCAnyPattern.
-echo [7/8] Git hooks / Java formatter...
+:: ktfmt --kotlinlang-style uses 4-space indent (pairs with GJF --aosp).
+echo [7/8] Git hooks / formatters...
 set GJF_VERSION=1.28.0
 set GJF_JAR=!USERPROFILE!\.githooks\google-java-format.jar
 set GJF_URL=https://github.com/google/google-java-format/releases/download/v!GJF_VERSION!/google-java-format-!GJF_VERSION!-all-deps.jar
+set KTFMT_VERSION=0.64
+set KTFMT_JAR=!USERPROFILE!\.githooks\ktfmt.jar
+set KTFMT_URL=https://github.com/Kotlin/ktfmt/releases/download/v!KTFMT_VERSION!/ktfmt-!KTFMT_VERSION!-with-dependencies.jar
 git config core.hooksPath .githooks >nul 2>&1
 git update-index --chmod=+x .githooks/pre-commit >nul 2>&1
+
 set NEED_GJF=0
 if not exist "!GJF_JAR!" (
     echo       [WARN] google-java-format.jar not found at !GJF_JAR!
@@ -390,7 +395,7 @@ if not exist "!GJF_JAR!" (
         echo              ^(common with GJF 1.29+ on JDK 17^). Will offer pinned v!GJF_VERSION!.
         set NEED_GJF=1
     ) else (
-        echo       [OK]   pre-commit hook configured ^(google-java-format works with this Java^)
+        echo       [OK]   google-java-format !GJF_VERSION! ^(Java, AOSP^)
     )
 )
 if "!NEED_GJF!"=="1" (
@@ -402,7 +407,7 @@ if "!NEED_GJF!"=="1" (
         if exist "!GJF_JAR!" (
             echo class _GjfProbe { void m^(^) { int x = 1; } } | java -jar "!GJF_JAR!" --aosp - >nul 2>&1
             if errorlevel 1 (
-                echo       [WARN] Downloaded jar still fails — need Java 17+ on PATH for the pre-commit hook
+                echo       [WARN] Downloaded jar still fails - need Java 17+ on PATH for the pre-commit hook
                 set /a WARNINGS+=1
             ) else (
                 echo       [OK]   Installed google-java-format !GJF_VERSION!
@@ -416,6 +421,49 @@ if "!NEED_GJF!"=="1" (
         echo              Pre-commit Java formatting will fail until a compatible jar is installed
         set /a WARNINGS+=1
     )
+)
+
+set NEED_KTFMT=0
+if not exist "!KTFMT_JAR!" (
+    echo       [WARN] ktfmt.jar not found at !KTFMT_JAR!
+    set NEED_KTFMT=1
+) else (
+    echo fun main^(^){val x=1} | java -jar "!KTFMT_JAR!" --kotlinlang-style - >nul 2>&1
+    if errorlevel 1 (
+        echo       [WARN] !KTFMT_JAR! is incompatible with the current Java runtime
+        echo              Will offer pinned v!KTFMT_VERSION!.
+        set NEED_KTFMT=1
+    ) else (
+        echo       [OK]   ktfmt !KTFMT_VERSION! ^(Kotlin, kotlinlang-style^)
+    )
+)
+if "!NEED_KTFMT!"=="1" (
+    set DL_CHOICE=
+    set /p DL_CHOICE="             Download ktfmt !KTFMT_VERSION! now? [Y/N] "
+    if /i "!DL_CHOICE!"=="Y" (
+        if not exist "!USERPROFILE!\.githooks" mkdir "!USERPROFILE!\.githooks"
+        powershell -NoProfile -ExecutionPolicy Bypass -Command "Invoke-WebRequest -Uri '!KTFMT_URL!' -OutFile '!KTFMT_JAR!'" >nul 2>&1
+        if exist "!KTFMT_JAR!" (
+            echo fun main^(^){val x=1} | java -jar "!KTFMT_JAR!" --kotlinlang-style - >nul 2>&1
+            if errorlevel 1 (
+                echo       [WARN] Downloaded ktfmt still fails - need Java 17+ on PATH for the pre-commit hook
+                set /a WARNINGS+=1
+            ) else (
+                echo       [OK]   Installed ktfmt !KTFMT_VERSION!
+            )
+        ) else (
+            echo       [WARN] Download failed -- install manually:
+            echo              !KTFMT_URL!
+            set /a WARNINGS+=1
+        )
+    ) else (
+        echo              Pre-commit Kotlin formatting will fail until a compatible jar is installed
+        set /a WARNINGS+=1
+    )
+)
+
+if "!NEED_GJF!"=="0" if "!NEED_KTFMT!"=="0" (
+    echo       [OK]   pre-commit hook configured ^(core.hooksPath=.githooks^)
 )
 
 :: ============================================================

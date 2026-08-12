@@ -3,9 +3,14 @@ package org.firstinspires.ftc.teamcode.tuning
 import com.acmerobotics.dashboard.config.Config
 import com.acmerobotics.roadrunner.Pose2d
 import com.acmerobotics.roadrunner.PoseVelocity2d
-import com.qualcomm.robotcore.hardware.DcMotorEx
 import com.qualcomm.robotcore.hardware.IMU
 import com.qualcomm.robotcore.util.ElapsedTime
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import java.util.function.DoubleSupplier
+import kotlin.math.abs
+import kotlin.math.max
 import org.firstinspires.ftc.robotcore.external.Telemetry
 import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit
 import org.firstinspires.ftc.robotcore.external.navigation.AngularVelocity
@@ -16,12 +21,6 @@ import org.firstinspires.ftc.teamcode.PinpointLocalizer
 import org.firstinspires.ftc.teamcode.TankDrive
 import org.firstinspires.ftc.teamcode.opmodes.base.MarsLinearOpMode
 import org.firstinspires.ftc.teamcode.utils.CsvLogger
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
-import java.util.function.DoubleSupplier
-import kotlin.math.abs
-import kotlin.math.max
 
 /**
  * Automatic on-robot identification of the `yawCoupling*` feedforward constants — the parasitic yaw
@@ -48,10 +47,10 @@ import kotlin.math.max
  * R² chase, which was designed for strong V-vs-v feedforward ramps and can discard most points
  * without ever getting a high R².
  *
- * Prerequisites: localization, drive feedforward (`kS`/`kV`/`kA`), and a sane `trackWidthTicks` must
- * already be tuned. Give the robot a clear straight lane of roughly 6–8 ft in each direction it will
- * ramp (forward, and sideways on mecanum). Press gamepad1 A during a ramp to cut power early (e.g.
- * before a wall); the fit uses whatever samples were collected.
+ * Prerequisites: localization, drive feedforward (`kS`/`kV`/`kA`), and a sane `trackWidthTicks`
+ * must already be tuned. Give the robot a clear straight lane of roughly 6–8 ft in each direction
+ * it will ramp (forward, and sideways on mecanum). Press gamepad1 A during a ramp to cut power
+ * early (e.g. before a wall); the fit uses whatever samples were collected.
  *
  * Dashboard knobs: raise [MAX_POWER] / [RAMP_TIME] if the robot barely moves or R² stays near zero
  * with a short speed range.
@@ -68,32 +67,28 @@ import kotlin.math.max
 class YawCouplingTuner : MarsLinearOpMode() {
     companion object {
         /** When false, skip writing CSVs (useful if the hub disk is full). */
-        @JvmField
-        var LOG_CSV = true
+        @JvmField var LOG_CSV = true
 
         /** Flush the sample CSV to disk after this many buffered rows. */
-        @JvmField
-        var LOG_FLUSH_EVERY = 256
+        @JvmField var LOG_FLUSH_EVERY = 256
 
         /**
          * Peak open-loop power at the end of the ramp. 0.4 was too gentle for many mecanum bases
          * (only a couple feet of travel); 0.65 needs ~6–8 ft of clear lane but gives a usable speed
          * span.
          */
-        @JvmField
-        var MAX_POWER = 0.65
+        @JvmField var MAX_POWER = 0.65
 
         /** Seconds spent ramping power from 0 to [MAX_POWER]. */
-        @JvmField
-        var RAMP_TIME = 5.0
+        @JvmField var RAMP_TIME = 5.0
 
         /** Samples slower than this (in/s) are ignored as start-up transient / noise. */
-        @JvmField
-        var MIN_SPEED = 5.0
+        @JvmField var MIN_SPEED = 5.0
 
-        /** R² below this is flagged as low-confidence (curl may be tiny or yaw measurement noisy). */
-        @JvmField
-        var WARN_R2 = 0.4
+        /**
+         * R² below this is flagged as low-confidence (curl may be tiny or yaw measurement noisy).
+         */
+        @JvmField var WARN_R2 = 0.4
 
         /**
          * Raw ramp measurements. `omega_src` is the yaw rate used by the fit (Pinpoint or hub IMU);
@@ -111,11 +106,8 @@ class YawCouplingTuner : MarsLinearOpMode() {
             "drive,yaw_source,kV_wheel,track_width,in_per_tick,kV_params,max_power,ramp_time,min_speed"
 
         private fun requireCalibrated(kVWheel: Double, trackWidth: Double) {
-            if (kVWheel <= 0 || trackWidth <= 0) {
-                throw RuntimeException(
-                    "Tune the drive feedforward (kV) and track width before running" +
-                        " YawCouplingTuner",
-                )
+            require(kVWheel > 0 && trackWidth > 0) {
+                "Tune the drive feedforward (kV) and track width before running YawCouplingTuner"
             }
         }
 
@@ -129,8 +121,8 @@ class YawCouplingTuner : MarsLinearOpMode() {
 
         /**
          * Prefer Pinpoint heading rate. Else hub IMU with deg→rad conversion; during the ramp the
-         * caller still records a single omega via [readHubYawRate], which picks the dominant axis so
-         * hub orientation misconfiguration does not zero out the signal.
+         * caller still records a single omega via [readHubYawRate], which picks the dominant axis
+         * so hub orientation misconfiguration does not zero out the signal.
          */
         private fun makeYawRateSource(localizer: Localizer, imu: IMU): DoubleSupplier {
             if (localizer is PinpointLocalizer) {
@@ -165,7 +157,8 @@ class YawCouplingTuner : MarsLinearOpMode() {
 
             // Early samples: build which axis is active during pure translation (curl is small, so
             // this mainly matters if orientation dumps true yaw onto X/Y when the robot *does*
-            // spin). For open-loop straight drive, curl is the signal — use Z unless another axis is
+            // spin). For open-loop straight drive, curl is the signal — use Z unless another axis
+            // is
             // clearly larger in magnitude over time.
             sumAbs[0] += abs(wx)
             sumAbs[1] += abs(wy)
@@ -249,168 +242,180 @@ class YawCouplingTuner : MarsLinearOpMode() {
         // cast to MultipleTelemetry.
         val telem: Telemetry = telemetry
 
-        if (TuningOpModes.DRIVE_CLASS == MecanumDrive::class.java) {
-            val drive =
-                MecanumDrive.forMarsLinear(hardwareMap, Pose2d(0.0, 0.0, 0.0), this::batteryVoltage)
-            val kVWheel = MecanumDrive.PARAMS.kV / MecanumDrive.PARAMS.inPerTick
-            val trackWidth = drive.kinematics.trackWidth
-            requireCalibrated(kVWheel, trackWidth)
+        when (TuningOpModes.DRIVE_CLASS) {
+            MecanumDrive::class.java -> {
+                val drive =
+                    MecanumDrive.forMarsLinear(hardwareMap, Pose2d(0.0, 0.0, 0.0)) {
+                        batteryVoltage()
+                    }
+                val kVWheel = MecanumDrive.PARAMS.kV / MecanumDrive.PARAMS.inPerTick
+                val trackWidth = drive.kinematics.trackWidth
+                requireCalibrated(kVWheel, trackWidth)
 
-            val yawRate = makeYawRateSource(drive.localizer, drive.lazyImu.get())
-            val yawSourceName = yawSourceLabel(drive.localizer)
+                val yawRate = makeYawRateSource(drive.localizer, drive.lazyImu.get())
+                val yawSourceName = yawSourceLabel(drive.localizer)
 
-            openLogs(
-                "MecanumDrive",
-                yawSourceName,
-                kVWheel,
-                trackWidth,
-                MecanumDrive.PARAMS.inPerTick,
-                MecanumDrive.PARAMS.kV,
-            )
+                openLogs(
+                    "MecanumDrive",
+                    yawSourceName,
+                    kVWheel,
+                    trackWidth,
+                    MecanumDrive.PARAMS.inPerTick,
+                    MecanumDrive.PARAMS.kV,
+                )
 
-            telem.addLine("Mecanum yaw-coupling tuner.")
-            telem.addData("yaw source", yawSourceName)
-            telem.addData(
-                "ramp",
-                "%.0f%% power over %.1fs (need ~6-8 ft clear)",
-                MAX_POWER * 100,
-                RAMP_TIME,
-            )
-            telem.addLine("Press START, then the robot ramps FORWARD, stops, then ramps SIDEWAYS.")
-            telem.addLine("Press gamepad1 A during a ramp to stop early (e.g. before a wall).")
-            telem.addLine("Make sure both lanes are clear.")
-            if (sampleLog != null) {
-                telem.addData("sample log", sampleLog!!.fileName())
-                telem.addData("meta log", metaLog!!.fileName())
-                telem.addLine("Pull with: telemetry/pull.sh")
-            }
-            telem.update()
-            waitForStart()
-            if (isStopRequested) {
+                telem.addLine("Mecanum yaw-coupling tuner.")
+                telem.addData("yaw source", yawSourceName)
+                telem.addData(
+                    "ramp",
+                    "%.0f%% power over %.1fs (need ~6-8 ft clear)",
+                    MAX_POWER * 100,
+                    RAMP_TIME,
+                )
+                telem.addLine(
+                    "Press START, then the robot ramps FORWARD, stops, then ramps SIDEWAYS."
+                )
+                telem.addLine("Press gamepad1 A during a ramp to stop early (e.g. before a wall).")
+                telem.addLine("Make sure both lanes are clear.")
+                sampleLog?.let {
+                    telem.addData("sample log", it.fileName())
+                    telem.addData("meta log", metaLog!!.fileName())
+                    telem.addLine("Pull with: telemetry/pull.sh")
+                }
+                telem.update()
+                waitForStart()
+                if (isStopRequested) {
+                    closeLogs()
+                    return
+                }
+
+                // --- forward ramp -> axial constants ---
+                val forward = rampAndSample(drive, yawRate, true, telem, "FORWARD")
+                val fwd = fitCurl(forward.samples)
+
+                // --- strafe ramp -> lateral constants ---
+                val strafe = rampAndSample(drive, yawRate, false, telem, "SIDEWAYS")
+                val lat = fitCurl(strafe.samples)
+
+                val factor = -kVWheel * trackWidth
+                val kSAxial = factor * fwd.intercept
+                val kVAxial = factor * fwd.slope
+                val kSLateral = factor * lat.intercept
+                val kVLateral = factor * lat.slope
+
+                MecanumDrive.PARAMS.yawCouplingKsAxial = kSAxial
+                MecanumDrive.PARAMS.yawCouplingKvAxial = kVAxial
+                MecanumDrive.PARAMS.yawCouplingKsLateral = kSLateral
+                MecanumDrive.PARAMS.yawCouplingKvLateral = kVLateral
+
                 closeLogs()
-                return
-            }
 
-            // --- forward ramp -> axial constants ---
-            val forward = rampAndSample(drive, yawRate, true, telem, "FORWARD")
-            val fwd = fitCurl(forward.samples)
-
-            // --- strafe ramp -> lateral constants ---
-            val strafe = rampAndSample(drive, yawRate, false, telem, "SIDEWAYS")
-            val lat = fitCurl(strafe.samples)
-
-            val factor = -kVWheel * trackWidth
-            val kSAxial = factor * fwd.intercept
-            val kVAxial = factor * fwd.slope
-            val kSLateral = factor * lat.intercept
-            val kVLateral = factor * lat.slope
-
-            MecanumDrive.PARAMS.yawCouplingKsAxial = kSAxial
-            MecanumDrive.PARAMS.yawCouplingKvAxial = kVAxial
-            MecanumDrive.PARAMS.yawCouplingKsLateral = kSLateral
-            MecanumDrive.PARAMS.yawCouplingKvLateral = kVLateral
-
-            closeLogs()
-
-            while (nextFrame()) {
-                telemetry.addLine("=== Written to live MecanumDrive.PARAMS ===")
-                telemetry.addData("yawCouplingKsAxial", "%.5f", kSAxial)
-                telemetry.addData("yawCouplingKvAxial", "%.5e", kVAxial)
-                telemetry.addData("yawCouplingKsLateral", "%.5f", kSLateral)
-                telemetry.addData("yawCouplingKvLateral", "%.5e", kVLateral)
-                telemetry.addLine()
-                telemetry.addData("yaw source", yawSourceName)
-                addFitTelemetry(telem, "forward", fwd, forward)
-                addFitTelemetry(telem, "strafe", lat, strafe)
-                if (LOG_CSV) {
-                    telemetry.addLine(
-                        "CSVs on hub under /sdcard/FIRST/ — pull with telemetry/pull.sh",
-                    )
-                }
-                telemetry.addLine("Live for later OpModes this session. Paste into source to keep.")
-                telemetry.addLine("If a re-test shows the curl got WORSE, negate that pair.")
-                if (fwd.r2 < WARN_R2 || lat.r2 < WARN_R2) {
+                while (nextFrame()) {
+                    telemetry.addLine("=== Written to live MecanumDrive.PARAMS ===")
+                    telemetry.addData("yawCouplingKsAxial", "%.5f", kSAxial)
+                    telemetry.addData("yawCouplingKvAxial", "%.5e", kVAxial)
+                    telemetry.addData("yawCouplingKsLateral", "%.5f", kSLateral)
+                    telemetry.addData("yawCouplingKvLateral", "%.5e", kVLateral)
                     telemetry.addLine()
+                    telemetry.addData("yaw source", yawSourceName)
+                    addFitTelemetry(telem, "forward", fwd, forward)
+                    addFitTelemetry(telem, "strafe", lat, strafe)
+                    if (LOG_CSV) {
+                        telemetry.addLine(
+                            "CSVs on hub under /sdcard/FIRST/ — pull with telemetry/pull.sh"
+                        )
+                    }
                     telemetry.addLine(
-                        "Low R^2 is common when curl is small (noise >> signal). Near-zero" +
-                            " constants are fine. If curl is visibly large, raise" +
-                            " MAX_POWER/RAMP_TIME or check yaw source.",
+                        "Live for later OpModes this session. Paste into source to keep."
                     )
+                    telemetry.addLine("If a re-test shows the curl got WORSE, negate that pair.")
+                    if (fwd.r2 < WARN_R2 || lat.r2 < WARN_R2) {
+                        telemetry.addLine()
+                        telemetry.addLine(
+                            "Low R^2 is common when curl is small (noise >> signal). Near-zero" +
+                                " constants are fine. If curl is visibly large, raise" +
+                                " MAX_POWER/RAMP_TIME or check yaw source."
+                        )
+                    }
                 }
             }
-        } else if (TuningOpModes.DRIVE_CLASS == TankDrive::class.java) {
-            val drive =
-                TankDrive.forMarsLinear(hardwareMap, Pose2d(0.0, 0.0, 0.0), this::batteryVoltage)
-            val kVWheel = TankDrive.PARAMS.kV / TankDrive.PARAMS.inPerTick
-            val trackWidth = drive.kinematics.trackWidth
-            requireCalibrated(kVWheel, trackWidth)
+            TankDrive::class.java -> {
+                val drive =
+                    TankDrive.forMarsLinear(hardwareMap, Pose2d(0.0, 0.0, 0.0)) { batteryVoltage() }
+                val kVWheel = TankDrive.PARAMS.kV / TankDrive.PARAMS.inPerTick
+                val trackWidth = drive.kinematics.trackWidth
+                requireCalibrated(kVWheel, trackWidth)
 
-            val yawRate = makeYawRateSource(drive.localizer, drive.lazyImu.get())
-            val yawSourceName = yawSourceLabel(drive.localizer)
+                val yawRate = makeYawRateSource(drive.localizer, drive.lazyImu.get())
+                val yawSourceName = yawSourceLabel(drive.localizer)
 
-            openLogs(
-                "TankDrive",
-                yawSourceName,
-                kVWheel,
-                trackWidth,
-                TankDrive.PARAMS.inPerTick,
-                TankDrive.PARAMS.kV,
-            )
+                openLogs(
+                    "TankDrive",
+                    yawSourceName,
+                    kVWheel,
+                    trackWidth,
+                    TankDrive.PARAMS.inPerTick,
+                    TankDrive.PARAMS.kV,
+                )
 
-            telem.addLine("Tank yaw-coupling tuner.")
-            telem.addData("yaw source", yawSourceName)
-            telem.addData("ramp", "%.0f%% power over %.1fs", MAX_POWER * 100, RAMP_TIME)
-            telem.addLine(
-                "Press START, then the robot ramps FORWARD. Make sure the lane is clear.",
-            )
-            telem.addLine("Press gamepad1 A during the ramp to stop early (e.g. before a wall).")
-            if (sampleLog != null) {
-                telem.addData("sample log", sampleLog!!.fileName())
-                telem.addData("meta log", metaLog!!.fileName())
-                telem.addLine("Pull with: telemetry/pull.sh")
-            }
-            telem.update()
-            waitForStart()
-            if (isStopRequested) {
+                telem.addLine("Tank yaw-coupling tuner.")
+                telem.addData("yaw source", yawSourceName)
+                telem.addData("ramp", "%.0f%% power over %.1fs", MAX_POWER * 100, RAMP_TIME)
+                telem.addLine(
+                    "Press START, then the robot ramps FORWARD. Make sure the lane is clear."
+                )
+                telem.addLine(
+                    "Press gamepad1 A during the ramp to stop early (e.g. before a wall)."
+                )
+                sampleLog?.let {
+                    telem.addData("sample log", it.fileName())
+                    telem.addData("meta log", metaLog!!.fileName())
+                    telem.addLine("Pull with: telemetry/pull.sh")
+                }
+                telem.update()
+                waitForStart()
+                if (isStopRequested) {
+                    closeLogs()
+                    return
+                }
+
+                val forward = rampAndSampleTank(drive, yawRate, telem)
+                val fwd = fitCurl(forward.samples)
+
+                val factor = -kVWheel * trackWidth
+                val kSAxial = factor * fwd.intercept
+                val kVAxial = factor * fwd.slope
+
+                TankDrive.PARAMS.yawCouplingKsAxial = kSAxial
+                TankDrive.PARAMS.yawCouplingKvAxial = kVAxial
+
                 closeLogs()
-                return
-            }
 
-            val forward = rampAndSampleTank(drive, yawRate, telem)
-            val fwd = fitCurl(forward.samples)
-
-            val factor = -kVWheel * trackWidth
-            val kSAxial = factor * fwd.intercept
-            val kVAxial = factor * fwd.slope
-
-            TankDrive.PARAMS.yawCouplingKsAxial = kSAxial
-            TankDrive.PARAMS.yawCouplingKvAxial = kVAxial
-
-            closeLogs()
-
-            while (nextFrame()) {
-                telemetry.addLine("=== Written to live TankDrive.PARAMS ===")
-                telemetry.addData("yawCouplingKsAxial", "%.5f", kSAxial)
-                telemetry.addData("yawCouplingKvAxial", "%.5e", kVAxial)
-                telemetry.addLine()
-                telemetry.addData("yaw source", yawSourceName)
-                addFitTelemetry(telem, "forward", fwd, forward)
-                if (LOG_CSV) {
-                    telemetry.addLine(
-                        "CSVs on hub under /sdcard/FIRST/ — pull with telemetry/pull.sh",
-                    )
-                }
-                telemetry.addLine("Live for later OpModes this session. Paste into source to keep.")
-                telemetry.addLine("If a re-test shows the curl got WORSE, negate the pair.")
-                if (fwd.r2 < WARN_R2) {
+                while (nextFrame()) {
+                    telemetry.addLine("=== Written to live TankDrive.PARAMS ===")
+                    telemetry.addData("yawCouplingKsAxial", "%.5f", kSAxial)
+                    telemetry.addData("yawCouplingKvAxial", "%.5e", kVAxial)
                     telemetry.addLine()
+                    telemetry.addData("yaw source", yawSourceName)
+                    addFitTelemetry(telem, "forward", fwd, forward)
+                    if (LOG_CSV) {
+                        telemetry.addLine(
+                            "CSVs on hub under /sdcard/FIRST/ — pull with telemetry/pull.sh"
+                        )
+                    }
                     telemetry.addLine(
-                        "Low R^2 is common when curl is small. Near-zero constants are fine.",
+                        "Live for later OpModes this session. Paste into source to keep."
                     )
+                    telemetry.addLine("If a re-test shows the curl got WORSE, negate the pair.")
+                    if (fwd.r2 < WARN_R2) {
+                        telemetry.addLine()
+                        telemetry.addLine(
+                            "Low R^2 is common when curl is small. Near-zero constants are fine."
+                        )
+                    }
                 }
             }
-        } else {
-            throw RuntimeException("Unknown DRIVE_CLASS")
+            else -> error("Unknown TuningOpModes.DRIVE_CLASS: ${TuningOpModes.DRIVE_CLASS}")
         }
     }
 

@@ -9,6 +9,13 @@ import com.acmerobotics.roadrunner.Vector2d
 import com.acmerobotics.roadrunner.Vector2dDual
 import com.qualcomm.robotcore.hardware.IMU
 import com.qualcomm.robotcore.util.ElapsedTime
+import java.util.function.Consumer
+import java.util.function.DoubleSupplier
+import kotlin.math.abs
+import kotlin.math.hypot
+import kotlin.math.ln
+import kotlin.math.sign
+import kotlin.math.sqrt
 import org.firstinspires.ftc.robotcore.external.Telemetry
 import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit
 import org.firstinspires.ftc.robotcore.external.navigation.AngularVelocity
@@ -18,13 +25,6 @@ import org.firstinspires.ftc.teamcode.MecanumDrive
 import org.firstinspires.ftc.teamcode.PinpointLocalizer
 import org.firstinspires.ftc.teamcode.TankDrive
 import org.firstinspires.ftc.teamcode.opmodes.base.MarsLinearOpMode
-import java.util.function.Consumer
-import java.util.function.DoubleSupplier
-import kotlin.math.abs
-import kotlin.math.hypot
-import kotlin.math.ln
-import kotlin.math.sign
-import kotlin.math.sqrt
 
 /**
  * Automatic on-robot correction of `trackWidthTicks` — the effective track width used by the
@@ -53,46 +53,40 @@ import kotlin.math.sqrt
  *   projection still recovers the signed rate.
  *
  * Prerequisites: the drive feedforward (`kS`/`kV`, ideally `kA`) must be tuned — the spin is driven
- * open-loop through it. `trackWidthTicks` may be left at 0; the tuner then seeds a nominal geometric
- * track width ([DEFAULT_TRACK_WIDTH_IN] / `inPerTick`) so the multiplicative fit can run. A
- * tape-measure value is still fine if you have one. On a successful fit, writes the corrected
- * `trackWidthTicks` into the live `PARAMS` statics so later OpModes in the same RC process can chain
- * without a paste. Re-run to verify: the slope should come out ≈ 1.00. Paste into source to keep
- * values across restart or redeploy.
+ * open-loop through it. `trackWidthTicks` may be left at 0; the tuner then seeds a nominal
+ * geometric track width ([DEFAULT_TRACK_WIDTH_IN] / `inPerTick`) so the multiplicative fit can run.
+ * A tape-measure value is still fine if you have one. On a successful fit, writes the corrected
+ * `trackWidthTicks` into the live `PARAMS` statics so later OpModes in the same RC process can
+ * chain without a paste. Re-run to verify: the slope should come out ≈ 1.00. Paste into source to
+ * keep values across restart or redeploy.
  */
 @Config
 class TrackWidthTuner : MarsLinearOpMode() {
     companion object {
         /** Peak commanded angular velocity at the end of each ramp, in rad/s. */
-        @JvmField
-        var MAX_ANG_VEL = Math.PI
+        @JvmField var MAX_ANG_VEL = Math.PI
 
         /** Seconds spent ramping the commanded angular velocity from 0 to [MAX_ANG_VEL]. */
-        @JvmField
-        var RAMP_TIME = 3.0
+        @JvmField var RAMP_TIME = 3.0
 
         /**
          * Samples with commanded angular velocity below this (rad/s) are ignored as start-up
          * transient.
          */
-        @JvmField
-        var MIN_ANG_VEL = 0.5
+        @JvmField var MIN_ANG_VEL = 0.5
 
         /**
-         * Nominal geometric track width in inches used when `Params.trackWidthTicks` is unset
-         * (`<= 0`). Converted to ticks via `/ inPerTick`. The robot size limit is 18 in; 16 in leaves
+         * Nominal geometric track width in inches used when `Params.trackWidthTicks` is unset (`<=
+         * 0`). Converted to ticks via `/ inPerTick`. The robot size limit is 18 in; 16 in leaves
          * margin under that for a typical wheel-center track. Mecanum effective width often comes
          * out somewhat larger after correction because of roller scrub.
          */
-        @JvmField
-        var DEFAULT_TRACK_WIDTH_IN = 16.0
+        @JvmField var DEFAULT_TRACK_WIDTH_IN = 16.0
 
         private fun requireFeedforward(kV: Double) {
-            if (kV <= 0) {
-                throw RuntimeException(
-                    "Tune the drive feedforward (kS/kV) before running TrackWidthTuner — the spin" +
-                        " is driven through it.",
-                )
+            require(kV > 0) {
+                "Tune the drive feedforward (kS/kV) before running TrackWidthTuner — the spin" +
+                    " is driven through it."
             }
         }
 
@@ -104,19 +98,16 @@ class TrackWidthTuner : MarsLinearOpMode() {
             if (trackWidthTicks > 0) {
                 return trackWidthTicks
             }
-            if (inPerTick <= 0) {
-                throw RuntimeException(
-                    "Set inPerTick (ForwardPushTest) before TrackWidthTuner — needed to seed" +
-                        " trackWidthTicks from " +
-                        DEFAULT_TRACK_WIDTH_IN +
-                        " in.",
-                )
+            require(inPerTick > 0) {
+                "Set inPerTick (ForwardPushTest) before TrackWidthTuner — needed to seed" +
+                    " trackWidthTicks from $DEFAULT_TRACK_WIDTH_IN in."
             }
             return DEFAULT_TRACK_WIDTH_IN / inPerTick
         }
 
         /**
-         * Builds (cmd, rate) series from raw samples and picks the best of the available estimators.
+         * Builds (cmd, rate) series from raw samples and picks the best of the available
+         * estimators.
          */
         private fun chooseFit(
             ccwRaw: List<RawSample>,
@@ -253,36 +244,45 @@ class TrackWidthTuner : MarsLinearOpMode() {
         val trackWidthTicks: Double
         val usedDefaultSeed: Boolean
         val paramsClass: String
-        if (TuningOpModes.DRIVE_CLASS == MecanumDrive::class.java) {
-            requireFeedforward(MecanumDrive.PARAMS.kV)
-            usedDefaultSeed = MecanumDrive.PARAMS.trackWidthTicks <= 0
-            // Kinematics bake trackWidthTicks at construction — seed Params first when unset.
-            trackWidthTicks =
-                resolveTrackWidthTicks(
-                    MecanumDrive.PARAMS.trackWidthTicks,
-                    MecanumDrive.PARAMS.inPerTick,
-                )
-            MecanumDrive.PARAMS.trackWidthTicks = trackWidthTicks
-            val drive =
-                MecanumDrive.forMarsLinear(hardwareMap, Pose2d(0.0, 0.0, 0.0), this::batteryVoltage)
-            setCommand = Consumer { drive.setDriveCommand(it) }
-            imu = drive.lazyImu.get()
-            localizer = drive.localizer
-            paramsClass = "MecanumDrive.Params"
-        } else if (TuningOpModes.DRIVE_CLASS == TankDrive::class.java) {
-            requireFeedforward(TankDrive.PARAMS.kV)
-            usedDefaultSeed = TankDrive.PARAMS.trackWidthTicks <= 0
-            trackWidthTicks =
-                resolveTrackWidthTicks(TankDrive.PARAMS.trackWidthTicks, TankDrive.PARAMS.inPerTick)
-            TankDrive.PARAMS.trackWidthTicks = trackWidthTicks
-            val drive =
-                TankDrive.forMarsLinear(hardwareMap, Pose2d(0.0, 0.0, 0.0), this::batteryVoltage)
-            setCommand = Consumer { drive.setDriveCommand(it) }
-            imu = drive.lazyImu.get()
-            localizer = drive.localizer
-            paramsClass = "TankDrive.Params"
-        } else {
-            throw RuntimeException("Unknown DRIVE_CLASS")
+        when (TuningOpModes.DRIVE_CLASS) {
+            MecanumDrive::class.java -> {
+                requireFeedforward(MecanumDrive.PARAMS.kV)
+                usedDefaultSeed = MecanumDrive.PARAMS.trackWidthTicks <= 0
+                // Kinematics bake trackWidthTicks at construction — seed Params first when unset.
+                trackWidthTicks =
+                    resolveTrackWidthTicks(
+                        MecanumDrive.PARAMS.trackWidthTicks,
+                        MecanumDrive.PARAMS.inPerTick,
+                    )
+                MecanumDrive.PARAMS.trackWidthTicks = trackWidthTicks
+                val drive =
+                    MecanumDrive.forMarsLinear(hardwareMap, Pose2d(0.0, 0.0, 0.0)) {
+                        batteryVoltage()
+                    }
+                setCommand = Consumer { drive.setDriveCommand(it) }
+                imu = drive.lazyImu.get()
+                localizer = drive.localizer
+                paramsClass = "MecanumDrive.Params"
+            }
+            TankDrive::class.java -> {
+                requireFeedforward(TankDrive.PARAMS.kV)
+                usedDefaultSeed = TankDrive.PARAMS.trackWidthTicks <= 0
+                trackWidthTicks =
+                    resolveTrackWidthTicks(
+                        TankDrive.PARAMS.trackWidthTicks,
+                        TankDrive.PARAMS.inPerTick,
+                    )
+                TankDrive.PARAMS.trackWidthTicks = trackWidthTicks
+                val drive =
+                    TankDrive.forMarsLinear(hardwareMap, Pose2d(0.0, 0.0, 0.0)) {
+                        batteryVoltage()
+                    }
+                setCommand = Consumer { drive.setDriveCommand(it) }
+                imu = drive.lazyImu.get()
+                localizer = drive.localizer
+                paramsClass = "TankDrive.Params"
+            }
+            else -> error("Unknown TuningOpModes.DRIVE_CLASS: ${TuningOpModes.DRIVE_CLASS}")
         }
 
         val pinpointRate: DoubleSupplier?
@@ -290,11 +290,10 @@ class TrackWidthTuner : MarsLinearOpMode() {
         if (localizer is PinpointLocalizer) {
             val pl = localizer
             usePinpoint = true
-            pinpointRate =
-                DoubleSupplier {
-                    pl.driver.update()
-                    pl.driver.getHeadingVelocity(UnnormalizedAngleUnit.RADIANS)
-                }
+            pinpointRate = DoubleSupplier {
+                pl.driver.update()
+                pl.driver.getHeadingVelocity(UnnormalizedAngleUnit.RADIANS)
+            }
         } else {
             usePinpoint = false
             pinpointRate = null
@@ -316,7 +315,7 @@ class TrackWidthTuner : MarsLinearOpMode() {
             telem.addData("seed", "Params trackWidthTicks=%.2f", trackWidthTicks)
         }
         telem.addLine(
-            "Press START, then the robot spins in place: counterclockwise, then clockwise.",
+            "Press START, then the robot spins in place: counterclockwise, then clockwise."
         )
         telem.addLine("Make sure it can rotate freely.")
         telem.update()
@@ -334,10 +333,9 @@ class TrackWidthTuner : MarsLinearOpMode() {
         // Kinematics bake trackWidthTicks at drive construction, so this OpMode's instance keeps
         // the seed; the next OpMode init picks up the corrected static.
         if (valid) {
-            if (TuningOpModes.DRIVE_CLASS == MecanumDrive::class.java) {
-                MecanumDrive.PARAMS.trackWidthTicks = corrected
-            } else {
-                TankDrive.PARAMS.trackWidthTicks = corrected
+            when (TuningOpModes.DRIVE_CLASS) {
+                MecanumDrive::class.java -> MecanumDrive.PARAMS.trackWidthTicks = corrected
+                TankDrive::class.java -> TankDrive.PARAMS.trackWidthTicks = corrected
             }
         }
 
@@ -379,7 +377,7 @@ class TrackWidthTuner : MarsLinearOpMode() {
                 telemetry.addLine(
                     "FAILED: fitted slope " +
                         String.format("%.3f", slope) +
-                        " is not plausible (need 0.2–5.0).",
+                        " is not plausible (need 0.2–5.0)."
                 )
                 telemetry.addLine("Check motor directions and feedforward (kS/kV), then retry.")
                 telemetry.addData("yaw source", fit.label)
@@ -410,12 +408,12 @@ class TrackWidthTuner : MarsLinearOpMode() {
                 )
                 if (slope >= 5.0) {
                     telemetry.addLine(
-                        "Slope too high: actual yaw >> commanded. Check units / free spin.",
+                        "Slope too high: actual yaw >> commanded. Check units / free spin."
                     )
                 } else if (slope <= 0.2) {
                     telemetry.addLine(
                         "Slope too low: robot spun much slower than commanded. Watch" +
-                            " commanded vs actual mid-ramp; check kS/kV and free spin.",
+                            " commanded vs actual mid-ramp; check kS/kV and free spin."
                     )
                 }
             }
@@ -448,7 +446,7 @@ class TrackWidthTuner : MarsLinearOpMode() {
                 PoseVelocity2dDual(
                     Vector2dDual.constant(Vector2d(0.0, 0.0), 3),
                     DualNum(doubleArrayOf(omegaCmd, alpha, 0.0)),
-                ),
+                )
             )
 
             val s = RawSample()
@@ -501,7 +499,7 @@ class TrackWidthTuner : MarsLinearOpMode() {
             PoseVelocity2dDual(
                 Vector2dDual.constant(Vector2d(0.0, 0.0), 3),
                 DualNum.constant(0.0, 3),
-            ),
+            )
         )
         // brief coast so the next ramp starts from rest
         val settle = ElapsedTime()

@@ -8,14 +8,14 @@ import kotlin.math.abs
 /**
  * Interactive tuning opmode for flywheel kP and IIR low-pass filter alpha values.
  *
- * <p>Paste kS and kV values from [FlywheelsFeedforwardTuning] into the static fields below
- * (or edit them live via FTC Dashboard). Then adjust [Params.targetTPS], [Params.targetAlpha],
+ * Paste kS and kV values from [FlywheelsFeedforwardTuning] into the static fields below (or edit
+ * them live via FTC Dashboard). Then adjust [Params.targetTPS], [Params.targetAlpha],
  * [Params.velocityAlpha], and [Params.kP] while watching the telemetry graphs to find values that
  * track the target velocity quickly without excessive oscillation.
  *
- * <p>Set [Params.useLeftMotor] to `true` for the left motor or `false` for the right
- * motor. The feedforward model is `voltage = kS + kV * smoothedTarget`, and the feedback term
- * is `kP * (smoothedTarget - smoothedVelocity)`.
+ * Set [Params.useLeftMotor] to `true` for the left motor or `false` for the right motor. The
+ * feedforward model is `voltage = kS + kV * smoothedTarget`, and the feedback term is `kP *
+ * (smoothedTarget - smoothedVelocity)`.
  */
 @Config
 @TeleOp(name = "Flywheels Feedback Tuning", group = "Tuning")
@@ -34,8 +34,7 @@ class FlywheelsFeedbackTuning : FlywheelsTuningBase() {
     }
 
     companion object {
-        @JvmField
-        var PARAMS = Params()
+        @JvmField var PARAMS = Params()
     }
 
     override fun runOpModeInternal() {
@@ -59,25 +58,24 @@ class FlywheelsFeedbackTuning : FlywheelsTuningBase() {
 
             // Stop any non-active motors. This ensures the previously-active motor
             // is stopped when useLeftMotor is toggled mid-run via Dashboard.
-            for (i in motors.indices) {
-                if (i != activeIndex) motors[i].power = 0.0
+            motors.forEachIndexed { i, motor ->
+                if (i != activeIndex) motor.power = 0.0
             }
 
             val rawVelocity = abs(activeMotor.velocity)
 
             smoothedTarget =
-                PARAMS.targetAlpha * PARAMS.targetTPS +
-                    (1 - PARAMS.targetAlpha) * smoothedTarget
+                PARAMS.targetAlpha * PARAMS.targetTPS + (1 - PARAMS.targetAlpha) * smoothedTarget
             // An IIR filter approaches its target asymptotically (never truly arrives).
             // Snap to the exact target once we're within 1% to avoid lingering error.
-            if (PARAMS.targetTPS != 0.0 &&
-                abs(smoothedTarget - PARAMS.targetTPS) / PARAMS.targetTPS < 0.01
+            if (
+                PARAMS.targetTPS != 0.0 &&
+                    abs(smoothedTarget - PARAMS.targetTPS) / PARAMS.targetTPS < 0.01
             ) {
                 smoothedTarget = PARAMS.targetTPS
             }
             smoothedVelocity =
-                PARAMS.velocityAlpha * rawVelocity +
-                    (1 - PARAMS.velocityAlpha) * smoothedVelocity
+                PARAMS.velocityAlpha * rawVelocity + (1 - PARAMS.velocityAlpha) * smoothedVelocity
 
             if (PARAMS.targetTPS == 0.0) {
                 activeMotor.power = 0.0
@@ -89,8 +87,7 @@ class FlywheelsFeedbackTuning : FlywheelsTuningBase() {
                 val voltage = feedforward + feedback
                 val battV = batteryVoltage()
                 // Match ArmSysId: reject near-zero ADC so power is never Inf/NaN.
-                activeMotor.power =
-                    if (battV > 0.5) Range.clip(voltage / battV, -1.0, 1.0) else 0.0
+                activeMotor.power = if (battV > 0.5) Range.clip(voltage / battV, -1.0, 1.0) else 0.0
             }
 
             telemetry.addData("Motor", if (PARAMS.useLeftMotor) "Left" else "Right")

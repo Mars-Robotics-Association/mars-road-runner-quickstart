@@ -1,22 +1,19 @@
 package org.firstinspires.ftc.teamcode.opmodes.tuning
 
-import com.qualcomm.robotcore.hardware.DcMotor
-
 import com.acmerobotics.dashboard.config.Config
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp
+import com.qualcomm.robotcore.hardware.DcMotor
 import com.qualcomm.robotcore.hardware.DcMotorEx
 import com.qualcomm.robotcore.util.ElapsedTime
 import com.qualcomm.robotcore.util.Range
+import kotlin.math.PI
 import org.firstinspires.ftc.teamcode.opmodes.base.MarsLinearOpMode
 import org.marsroboticsassociation.controllib.mechanism.ArmSysId
-import kotlin.math.PI
 
 /**
- * On-robot arm system ID using ControlLab's integrated equation-of-motion method
- * ([ArmSysId]).
+ * On-robot arm system ID using ControlLab's integrated equation-of-motion method ([ArmSysId]).
  *
  * <p>Recovers the five-parameter model used by `ArmModel` / mechanism controllers:
- *
  * <pre>
  *   V = kS·sign(ω) + kV·ω + kA·α + kCos·cos(θ) + kSin·sin(θ)
  * </pre>
@@ -24,50 +21,48 @@ import kotlin.math.PI
  * by logging encoder position (not hub velocity) and regressing on integrated intervals so
  * acceleration is never differentiated from noisy velocity.
  *
- * <p><b>Two-stage fit.</b> Constant-velocity <b>holds</b> (Y / right bumper) pin `kS`, `kV`,
- * and gravity quasi-statically — at a held speed α ≈ 0, so a lashy/flexy drivetrain cannot
- * inflate `kS` (the direction-flipping flex/lash deflection would otherwise land in the
- * `sign(ω)` term), and the fit's direction-split gravity columns absorb the ±half-lash
- * encoder offset (reported back as a backlash estimate). Constant-voltage <b>runs</b> (A / X)
- * excite `Δω` and pin `kA`; run at several speeds in both directions so the hold-side
- * `kV` is trusted. [ArmSysId.solveTwoStage] combines them and cross-checks the
- * hold-side `kV` against the run-side one — disagreement flags flex contamination. An
- * over-estimated `kS` is an anti-braking feedforward term that brings back arrival overshoot,
- * so the holds matter on a real arm.
+ * <p><b>Two-stage fit.</b> Constant-velocity <b>holds</b> (Y / right bumper) pin `kS`, `kV`, and
+ * gravity quasi-statically — at a held speed α ≈ 0, so a lashy/flexy drivetrain cannot inflate `kS`
+ * (the direction-flipping flex/lash deflection would otherwise land in the `sign(ω)` term), and the
+ * fit's direction-split gravity columns absorb the ±half-lash encoder offset (reported back as a
+ * backlash estimate). Constant-voltage <b>runs</b> (A / X) excite `Δω` and pin `kA`; run at several
+ * speeds in both directions so the hold-side `kV` is trusted. [ArmSysId.solveTwoStage] combines
+ * them and cross-checks the hold-side `kV` against the run-side one — disagreement flags flex
+ * contamination. An over-estimated `kS` is an anti-braking feedforward term that brings back
+ * arrival overshoot, so the holds matter on a real arm.
  *
  * <p><b>Flex-aware runs.</b> If the arm visibly rings, capture a ring-down (<b>left bumper</b>:
  * power drops, flick the arm, hold still) or set [Params.FLEX_HZ]; the fit then spans its run
  * intervals over whole flex periods so the ring cancels out of `kA`. Raw logs are kept and
  * accumulated at solve time, so a ring-down captured after some runs still benefits them.
  *
- * <p>Each control loop reads the hub battery voltage and commands `power = clamp(V_cmd /
- * V_batt)` so the applied voltage tracks the requested volts under battery sag. Samples are taken
- * every loop with wall-clock timestamps — no sleep, no paced sample rate. The fit uses measured
- * applied voltage and actual loop `dt`.
+ * <p>Each control loop reads the hub battery voltage and commands `power = clamp(V_cmd / V_batt)`
+ * so the applied voltage tracks the requested volts under battery sag. Samples are taken every loop
+ * with wall-clock timestamps — no sleep, no paced sample rate. The fit uses measured applied
+ * voltage and actual loop `dt`.
  *
- * <p><b>Fixed range of motion</b> — set [Params.MIN_ANGLE_DEG] and
- * [Params.MAX_ANGLE_DEG] (deg from horizontal) to your mechanical hard stops. Open-loop runs
- * soft-stop [Params.RUN_STOP_MARGIN_DEG] inside that range; the OLS fit also discards samples
- * near the stops so contact forces do not pollute kS / gravity.
+ * <p><b>Fixed range of motion</b> — set [Params.MIN_ANGLE_DEG] and [Params.MAX_ANGLE_DEG] (deg from
+ * horizontal) to your mechanical hard stops. Open-loop runs soft-stop [Params.RUN_STOP_MARGIN_DEG]
+ * inside that range; the OLS fit also discards samples near the stops so contact forces do not
+ * pollute kS / gravity.
  *
  * <p><b>Procedure</b>
- *
  * <ol>
- *   <li>Set range, motor name, and `TICKS_PER_ARM_REV` on Dashboard (or in code).
- *   <li>Press Start. Idle loop shows θ vs the configured range and live battery voltage.
- *   <li><b>Holds (kS, kV, gravity, backlash):</b> park the arm near one hard stop, then press
- *       <b>Y</b> (sweep up) or <b>right bumper</b> (sweep down) to hold `HOLD_SPEED` across
- *       the range. Collect a few speeds in both directions (change `HOLD_SPEED` between
- *       holds) — the speed spread is what lets the holds pin `kV`.
- *   <li><b>Runs (kA):</b> press <b>A</b> for a +voltage run, <b>X</b> for a −voltage run; change
- *       `RUN_VOLTAGE` between runs. Near-horizontal starts help.
- *   <li><b>Flex (optional):</b> press <b>left bumper</b>, flick the arm, and let it ring to measure
- *       the flex period (or set `FLEX_HZ`).
- *   <li>Press <b>B</b> to solve (two-stage) and show results until stop.
+ * <li>Set range, motor name, and `TICKS_PER_ARM_REV` on Dashboard (or in code).
+ * <li>Press Start. Idle loop shows θ vs the configured range and live battery voltage.
+ * <li><b>Holds (kS, kV, gravity, backlash):</b> park the arm near one hard stop, then press
+ *   <b>Y</b> (sweep up) or <b>right bumper</b> (sweep down) to hold `HOLD_SPEED` across the range.
+ *   Collect a few speeds in both directions (change `HOLD_SPEED` between holds) — the speed spread
+ *   is what lets the holds pin `kV`.
+ * <li><b>Runs (kA):</b> press <b>A</b> for a +voltage run, <b>X</b> for a −voltage run; change
+ *   `RUN_VOLTAGE` between runs. Near-horizontal starts help.
+ * <li><b>Flex (optional):</b> press <b>left bumper</b>, flick the arm, and let it ring to measure
+ *   the flex period (or set `FLEX_HZ`).
+ * <li>Press <b>B</b> to solve (two-stage) and show results until stop.
  * </ol>
  *
- * <p>Unlike [ArmFeedforwardTuning] (quasistatic + separate step for kA), this recovers all
- * five coefficients from the same encoder-log battery as ControlLab's "Run SysID".
+ * <p>Unlike [ArmFeedforwardTuning] (quasistatic + separate step for kA), this recovers all five
+ * coefficients from the same encoder-log battery as ControlLab's "Run SysID".
  */
 @Config
 @TeleOp(name = "ArmSysIdTuning", group = "Tuning")
@@ -144,8 +139,7 @@ class ArmSysIdTuning : MarsLinearOpMode() {
     }
 
     companion object {
-        @JvmField
-        var PARAMS = Params()
+        @JvmField var PARAMS = Params()
     }
 
     private lateinit var motor: DcMotorEx
@@ -153,8 +147,8 @@ class ArmSysIdTuning : MarsLinearOpMode() {
 
     // Raw logs ({theta, volts, time} per capture), accumulated into fit rows at solve time so a
     // flex period learned late (ring-down or Dashboard edit) still applies to every run.
-    private val runLogs = ArrayList<Array<DoubleArray>>() // stage 2 (kA): A/X runs
-    private val holdLogs = ArrayList<Array<DoubleArray>>() // stage 1: Y/RB holds
+    private val runLogs = mutableListOf<Array<DoubleArray>>() // stage 2 (kA): A/X runs
+    private val holdLogs = mutableListOf<Array<DoubleArray>>() // stage 1: Y/RB holds
     private var flexPeriodMeasured = 0.0 // seconds; from a left-bumper ring-down capture
     private var runsCompleted = 0
     private var holdsCompleted = 0
@@ -245,11 +239,10 @@ class ArmSysIdTuning : MarsLinearOpMode() {
      * along the way), then run the two-stage solve.
      */
     private fun solveFromLogs(): ArmSysId.Result {
-        val fit = ArmSysId.FitParams()
-        fit.flexPeriodSec = flexPeriodSec()
+        val fit = ArmSysId.FitParams().also { it.flexPeriodSec = flexPeriodSec() }
 
-        val movingRows = ArrayList<DoubleArray>()
-        val movingRhs = ArrayList<Double>()
+        val movingRows = mutableListOf<DoubleArray>()
+        val movingRhs = mutableListOf<Double>()
         for (log in runLogs) {
             ArmSysId.accumulateRun(
                 log[0],
@@ -262,11 +255,18 @@ class ArmSysIdTuning : MarsLinearOpMode() {
                 movingRhs,
             )
         }
-        val holdRows = ArrayList<DoubleArray>()
-        val holdRhs = ArrayList<Double>()
+        val holdRows = mutableListOf<DoubleArray>()
+        val holdRhs = mutableListOf<Double>()
         for (log in holdLogs) {
             ArmSysId.accumulateHold(
-                log[0], log[1], log[2], minAngleRad(), maxAngleRad(), fit, holdRows, holdRhs,
+                log[0],
+                log[1],
+                log[2],
+                minAngleRad(),
+                maxAngleRad(),
+                fit,
+                holdRows,
+                holdRhs,
             )
         }
         holdRowCount = holdRows.size
@@ -275,37 +275,33 @@ class ArmSysIdTuning : MarsLinearOpMode() {
     }
 
     /** The flex period to fit with: a ring-down measurement wins over the configured FLEX_HZ. */
-    private fun flexPeriodSec(): Double {
-        if (flexPeriodMeasured > 0) {
-            return flexPeriodMeasured
+    private fun flexPeriodSec(): Double =
+        when {
+            flexPeriodMeasured > 0 -> flexPeriodMeasured
+            PARAMS.FLEX_HZ > 0 -> 1.0 / PARAMS.FLEX_HZ
+            else -> 0.0
         }
-        return if (PARAMS.FLEX_HZ > 0) 1.0 / PARAMS.FLEX_HZ else 0.0
-    }
 
     private fun flexPeriodTelemetry(): String {
         val period = flexPeriodSec()
         if (period <= 0) {
             return "none (LB to measure, or set FLEX_HZ)"
         }
-        return String.format(
-            "%.3f s (%.1f Hz, %s)",
-            period,
-            1.0 / period,
-            if (flexPeriodMeasured > 0) "measured" else "FLEX_HZ",
-        )
+        val source = if (flexPeriodMeasured > 0) "measured" else "FLEX_HZ"
+        return "%.3f s (%.1f Hz, %s)".format(period, 1.0 / period, source)
     }
 
     /**
-     * Open-loop run targeting `voltageCmd` volts for [Params.RUN_DURATION_S]. Every
-     * loop: bulk-read, measure hub voltage, set `power = clamp(V_cmd / V_batt)`, log θ / V /
-     * wall time at the natural loop rate. Soft-stops at the fixed range margins.
+     * Open-loop run targeting `voltageCmd` volts for [Params.RUN_DURATION_S]. Every loop:
+     * bulk-read, measure hub voltage, set `power = clamp(V_cmd / V_batt)`, log θ / V / wall time at
+     * the natural loop rate. Soft-stops at the fixed range margins.
      *
      * @return false if the OpMode stopped
      */
     private fun runVoltageCommand(voltageCmd: Double, label: String): Boolean {
-        val thetaList = ArrayList<Double>()
-        val voltList = ArrayList<Double>()
-        val timeList = ArrayList<Double>()
+        val thetaList = mutableListOf<Double>()
+        val voltList = mutableListOf<Double>()
+        val timeList = mutableListOf<Double>()
         val run = ElapsedTime()
         val loSoft = minAngleRad() + stopMarginRad()
         val hiSoft = maxAngleRad() - stopMarginRad()
@@ -385,19 +381,19 @@ class ArmSysIdTuning : MarsLinearOpMode() {
     }
 
     /**
-     * Constant-velocity hold targeting `targetVel` rad/s: a PI loop on velocity error drives
-     * the arm across the range at a held speed, logging θ / applied V / wall time each loop. The
-     * held speed keeps acceleration ≈ 0, so [ArmSysId.accumulateHold] recovers a quasi-static
-     * `kS` and gravity that a lashy/flexy drivetrain would otherwise corrupt. Start the arm
-     * near the opposite hard stop so the hold sweeps a wide angle band. Soft-stops at the fixed
-     * range margins.
+     * Constant-velocity hold targeting `targetVel` rad/s: a PI loop on velocity error drives the
+     * arm across the range at a held speed, logging θ / applied V / wall time each loop. The held
+     * speed keeps acceleration ≈ 0, so [ArmSysId.accumulateHold] recovers a quasi-static `kS` and
+     * gravity that a lashy/flexy drivetrain would otherwise corrupt. Start the arm near the
+     * opposite hard stop so the hold sweeps a wide angle band. Soft-stops at the fixed range
+     * margins.
      *
      * @return false if the OpMode stopped
      */
     private fun runVelocityHold(targetVel: Double, label: String): Boolean {
-        val thetaList = ArrayList<Double>()
-        val voltList = ArrayList<Double>()
-        val timeList = ArrayList<Double>()
+        val thetaList = mutableListOf<Double>()
+        val voltList = mutableListOf<Double>()
+        val timeList = mutableListOf<Double>()
         val run = ElapsedTime()
         val loSoft = minAngleRad() + stopMarginRad()
         val hiSoft = maxAngleRad() - stopMarginRad()
@@ -471,14 +467,14 @@ class ArmSysIdTuning : MarsLinearOpMode() {
 
     /**
      * Ring-down capture for the flex period: power drops to float, the driver flicks the arm, and
-     * the free oscillation is logged for [Params.RINGDOWN_S].
-     * [ArmSysId.estimateFlexPeriod] turns the log into a period for the solve-time fit.
+     * the free oscillation is logged for [Params.RINGDOWN_S]. [ArmSysId.estimateFlexPeriod] turns
+     * the log into a period for the solve-time fit.
      *
      * @return false if the OpMode stopped
      */
     private fun captureRingDown(): Boolean {
-        val thetaList = ArrayList<Double>()
-        val timeList = ArrayList<Double>()
+        val thetaList = mutableListOf<Double>()
+        val timeList = mutableListOf<Double>()
         val run = ElapsedTime()
         // Float, not brake: a shorted motor damps the very oscillation being measured.
         motor.zeroPowerBehavior = DcMotor.ZeroPowerBehavior.FLOAT
@@ -496,14 +492,8 @@ class ArmSysIdTuning : MarsLinearOpMode() {
         }
         motor.zeroPowerBehavior = DcMotor.ZeroPowerBehavior.BRAKE
 
-        val n = thetaList.size
-        val theta = DoubleArray(n)
-        val timeSec = DoubleArray(n)
-        for (i in 0 until n) {
-            theta[i] = thetaList[i]
-            timeSec[i] = timeList[i]
-        }
-        val period = ArmSysId.estimateFlexPeriod(theta, timeSec)
+        val period =
+            ArmSysId.estimateFlexPeriod(thetaList.toDoubleArray(), timeList.toDoubleArray())
         if (period > 0) {
             flexPeriodMeasured = period
             telemetry.addData("Ring-down", "flex period %.3f s (%.1f Hz)", period, 1.0 / period)
@@ -518,16 +508,8 @@ class ArmSysIdTuning : MarsLinearOpMode() {
         theta: List<Double>,
         volts: List<Double>,
         time: List<Double>,
-    ): Array<DoubleArray> {
-        val n = theta.size
-        val log = Array(3) { DoubleArray(n) }
-        for (i in 0 until n) {
-            log[0][i] = theta[i]
-            log[1][i] = volts[i]
-            log[2][i] = time[i]
-        }
-        return log
-    }
+    ): Array<DoubleArray> =
+        arrayOf(theta.toDoubleArray(), volts.toDoubleArray(), time.toDoubleArray())
 
     private fun showResults(r: ArmSysId.Result) {
         while (nextFrame()) {
@@ -559,8 +541,7 @@ class ArmSysIdTuning : MarsLinearOpMode() {
                 if (r.kVHold.isNaN()) {
                     telemetry.addData(
                         "kV (hold)",
-                        "n/a — holds lack speed spread or a direction; " +
-                            "run-side kV shipped",
+                        "n/a — holds lack speed spread or a direction; " + "run-side kV shipped",
                     )
                 } else {
                     telemetry.addData(
@@ -572,7 +553,7 @@ class ArmSysIdTuning : MarsLinearOpMode() {
                     if (r.kVDisagreement() > 0.10) {
                         telemetry.addLine(
                             "WARNING: hold/run kV disagree >10% — moving runs look " +
-                                "flex/lash contaminated; trust the hold-side value.",
+                                "flex/lash contaminated; trust the hold-side value."
                         )
                     }
                 }
@@ -627,22 +608,14 @@ class ArmSysIdTuning : MarsLinearOpMode() {
         )
     }
 
-    private fun minAngleRad(): Double {
-        return Math.toRadians(PARAMS.MIN_ANGLE_DEG)
-    }
+    private fun minAngleRad(): Double = Math.toRadians(PARAMS.MIN_ANGLE_DEG)
 
-    private fun maxAngleRad(): Double {
-        return Math.toRadians(PARAMS.MAX_ANGLE_DEG)
-    }
+    private fun maxAngleRad(): Double = Math.toRadians(PARAMS.MAX_ANGLE_DEG)
 
-    private fun stopMarginRad(): Double {
-        return Math.toRadians(PARAMS.RUN_STOP_MARGIN_DEG)
-    }
+    private fun stopMarginRad(): Double = Math.toRadians(PARAMS.RUN_STOP_MARGIN_DEG)
 
-    private fun readThetaRad(): Double {
-        return motor.currentPosition * ticksToRad +
-            Math.toRadians(PARAMS.ENCODER_ZERO_OFFSET_DEG)
-    }
+    private fun readThetaRad(): Double =
+        motor.currentPosition * ticksToRad + Math.toRadians(PARAMS.ENCODER_ZERO_OFFSET_DEG)
 
     private fun cutPower() {
         if (::motor.isInitialized) {

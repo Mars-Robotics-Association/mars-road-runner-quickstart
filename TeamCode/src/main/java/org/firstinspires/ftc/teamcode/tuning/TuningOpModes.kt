@@ -9,7 +9,6 @@ import com.acmerobotics.roadrunner.ftc.DeadWheelDirectionDebugger
 import com.acmerobotics.roadrunner.ftc.DriveType
 import com.acmerobotics.roadrunner.ftc.DriveView
 import com.acmerobotics.roadrunner.ftc.DriveViewFactory
-import com.acmerobotics.roadrunner.ftc.Encoder
 import com.acmerobotics.roadrunner.ftc.EncoderGroup
 import com.acmerobotics.roadrunner.ftc.EncoderRef
 import com.acmerobotics.roadrunner.ftc.ForwardPushTest
@@ -48,14 +47,11 @@ import org.firstinspires.ftc.teamcode.TwoDeadWheelLocalizer
 class TuningOpModes private constructor() {
     companion object {
         // TODO: change this to TankDrive::class.java if you're using tank
-        @JvmField
-        val DRIVE_CLASS: Class<*> = MecanumDrive::class.java
+        @JvmField val DRIVE_CLASS: Class<*> = MecanumDrive::class.java
 
-        @JvmField
-        val GROUP = "quickstart"
+        @JvmField val GROUP = "quickstart"
 
-        @JvmField
-        val DISABLED = false
+        @JvmField val DISABLED = false
 
         private fun metaForClass(cls: Class<out OpMode>): OpModeMeta {
             return OpModeMeta.Builder()
@@ -128,204 +124,204 @@ class TuningOpModes private constructor() {
         fun register(manager: OpModeManager) {
             if (DISABLED) return
 
-            val dvf: DriveViewFactory
-            if (DRIVE_CLASS == MecanumDrive::class.java) {
-                dvf =
-                    object : DriveViewFactory {
-                        override fun make(hardwareMap: HardwareMap): DriveView {
-                        val md = MecanumDrive(hardwareMap, Pose2d(0.0, 0.0, 0.0))
-                        var lazyImu: LazyImu = md.lazyImu
+            val dvf: DriveViewFactory =
+                when (DRIVE_CLASS) {
+                    MecanumDrive::class.java ->
+                        object : DriveViewFactory {
+                            override fun make(hardwareMap: HardwareMap): DriveView {
+                                val md = MecanumDrive(hardwareMap, Pose2d(0.0, 0.0, 0.0))
+                                var lazyImu: LazyImu = md.lazyImu
 
-                        val encoderGroups = ArrayList<EncoderGroup>()
-                        val leftEncs = ArrayList<EncoderRef>()
-                        val rightEncs = ArrayList<EncoderRef>()
-                        val parEncs = ArrayList<EncoderRef>()
-                        val perpEncs = ArrayList<EncoderRef>()
-                        when (val localizer = md.localizer) {
-                            is MecanumDrive.DriveLocalizer -> {
-                                encoderGroups.add(
-                                    LynxQuadratureEncoderGroup(
-                                        hardwareMap.getAll(LynxModule::class.java),
-                                        listOf(
-                                            localizer.leftFront,
-                                            localizer.leftBack,
-                                            localizer.rightFront,
-                                            localizer.rightBack,
-                                        ),
-                                    ),
-                                )
-                                leftEncs.add(EncoderRef(0, 0))
-                                leftEncs.add(EncoderRef(0, 1))
-                                rightEncs.add(EncoderRef(0, 2))
-                                rightEncs.add(EncoderRef(0, 3))
-                            }
-                            is ThreeDeadWheelLocalizer -> {
-                                encoderGroups.add(
-                                    LynxQuadratureEncoderGroup(
-                                        hardwareMap.getAll(LynxModule::class.java),
-                                        listOf(localizer.par0, localizer.par1, localizer.perp),
-                                    ),
-                                )
-                                parEncs.add(EncoderRef(0, 0))
-                                parEncs.add(EncoderRef(0, 1))
-                                perpEncs.add(EncoderRef(0, 2))
-                            }
-                            is TwoDeadWheelLocalizer -> {
-                                encoderGroups.add(
-                                    LynxQuadratureEncoderGroup(
-                                        hardwareMap.getAll(LynxModule::class.java),
-                                        listOf(localizer.par, localizer.perp),
-                                    ),
-                                )
-                                parEncs.add(EncoderRef(0, 0))
-                                perpEncs.add(EncoderRef(0, 1))
-                            }
-                            is OTOSLocalizer -> {
-                                encoderGroups.add(OTOSEncoderGroup(localizer.otos))
-                                parEncs.add(EncoderRef(0, 0))
-                                perpEncs.add(EncoderRef(0, 1))
-                                lazyImu = OTOSIMU(localizer.otos)
-                            }
-                            is PinpointLocalizer -> {
-                                val pv = makePinpointView(localizer)
-                                encoderGroups.add(PinpointEncoderGroup(pv))
-                                parEncs.add(EncoderRef(0, 0))
-                                perpEncs.add(EncoderRef(0, 1))
-                                lazyImu = PinpointIMU(pv)
-                            }
-                            else -> {
-                                throw RuntimeException(
-                                    "unknown localizer: " + md.localizer.javaClass.name,
-                                )
-                            }
-                        }
-
-                        return DriveView(
-                            DriveType.MECANUM,
-                            MecanumDrive.PARAMS.inPerTick,
-                            MecanumDrive.PARAMS.maxWheelVel,
-                            MecanumDrive.PARAMS.minProfileAccel,
-                            MecanumDrive.PARAMS.maxProfileAccel,
-                            encoderGroups,
-                            listOf(md.leftFront, md.leftBack),
-                            listOf(md.rightFront, md.rightBack),
-                            leftEncs,
-                            rightEncs,
-                            parEncs,
-                            perpEncs,
-                            lazyImu,
-                            md.voltageSensor,
-                            {
-                                MotorFeedforward(
-                                    MecanumDrive.PARAMS.kS,
-                                    MecanumDrive.PARAMS.kV / MecanumDrive.PARAMS.inPerTick,
-                                    MecanumDrive.PARAMS.kA / MecanumDrive.PARAMS.inPerTick,
-                                )
-                            },
-                            0,
-                        )
-                        }
-                    }
-            } else if (DRIVE_CLASS == TankDrive::class.java) {
-                dvf =
-                    object : DriveViewFactory {
-                        override fun make(hardwareMap: HardwareMap): DriveView {
-                        val td = TankDrive(hardwareMap, Pose2d(0.0, 0.0, 0.0))
-                        var lazyImu: LazyImu = td.lazyImu
-
-                        val encoderGroups = ArrayList<EncoderGroup>()
-                        val leftEncs = ArrayList<EncoderRef>()
-                        val rightEncs = ArrayList<EncoderRef>()
-                        val parEncs = ArrayList<EncoderRef>()
-                        val perpEncs = ArrayList<EncoderRef>()
-                        when (val localizer = td.localizer) {
-                            is TankDrive.DriveLocalizer -> {
-                                val allEncoders = ArrayList<Encoder>()
-                                allEncoders.addAll(localizer.leftEncs)
-                                allEncoders.addAll(localizer.rightEncs)
-                                encoderGroups.add(
-                                    LynxQuadratureEncoderGroup(
-                                        hardwareMap.getAll(LynxModule::class.java),
-                                        allEncoders,
-                                    ),
-                                )
-                                for (i in localizer.leftEncs.indices) {
-                                    leftEncs.add(EncoderRef(0, i))
+                                val encoderGroups = mutableListOf<EncoderGroup>()
+                                val leftEncs = mutableListOf<EncoderRef>()
+                                val rightEncs = mutableListOf<EncoderRef>()
+                                val parEncs = mutableListOf<EncoderRef>()
+                                val perpEncs = mutableListOf<EncoderRef>()
+                                when (val localizer = md.localizer) {
+                                    is MecanumDrive.DriveLocalizer -> {
+                                        encoderGroups.add(
+                                            LynxQuadratureEncoderGroup(
+                                                hardwareMap.getAll(LynxModule::class.java),
+                                                listOf(
+                                                    localizer.leftFront,
+                                                    localizer.leftBack,
+                                                    localizer.rightFront,
+                                                    localizer.rightBack,
+                                                ),
+                                            )
+                                        )
+                                        leftEncs.add(EncoderRef(0, 0))
+                                        leftEncs.add(EncoderRef(0, 1))
+                                        rightEncs.add(EncoderRef(0, 2))
+                                        rightEncs.add(EncoderRef(0, 3))
+                                    }
+                                    is ThreeDeadWheelLocalizer -> {
+                                        encoderGroups.add(
+                                            LynxQuadratureEncoderGroup(
+                                                hardwareMap.getAll(LynxModule::class.java),
+                                                listOf(
+                                                    localizer.par0,
+                                                    localizer.par1,
+                                                    localizer.perp,
+                                                ),
+                                            )
+                                        )
+                                        parEncs.add(EncoderRef(0, 0))
+                                        parEncs.add(EncoderRef(0, 1))
+                                        perpEncs.add(EncoderRef(0, 2))
+                                    }
+                                    is TwoDeadWheelLocalizer -> {
+                                        encoderGroups.add(
+                                            LynxQuadratureEncoderGroup(
+                                                hardwareMap.getAll(LynxModule::class.java),
+                                                listOf(localizer.par, localizer.perp),
+                                            )
+                                        )
+                                        parEncs.add(EncoderRef(0, 0))
+                                        perpEncs.add(EncoderRef(0, 1))
+                                    }
+                                    is OTOSLocalizer -> {
+                                        encoderGroups.add(OTOSEncoderGroup(localizer.otos))
+                                        parEncs.add(EncoderRef(0, 0))
+                                        perpEncs.add(EncoderRef(0, 1))
+                                        lazyImu = OTOSIMU(localizer.otos)
+                                    }
+                                    is PinpointLocalizer -> {
+                                        val pv = makePinpointView(localizer)
+                                        encoderGroups.add(PinpointEncoderGroup(pv))
+                                        parEncs.add(EncoderRef(0, 0))
+                                        perpEncs.add(EncoderRef(0, 1))
+                                        lazyImu = PinpointIMU(pv)
+                                    }
+                                    else ->
+                                        error("unknown localizer: ${md.localizer.javaClass.name}")
                                 }
-                                for (i in localizer.rightEncs.indices) {
-                                    rightEncs.add(EncoderRef(0, localizer.leftEncs.size + i))
-                                }
-                            }
-                            is ThreeDeadWheelLocalizer -> {
-                                encoderGroups.add(
-                                    LynxQuadratureEncoderGroup(
-                                        hardwareMap.getAll(LynxModule::class.java),
-                                        listOf(localizer.par0, localizer.par1, localizer.perp),
-                                    ),
-                                )
-                                parEncs.add(EncoderRef(0, 0))
-                                parEncs.add(EncoderRef(0, 1))
-                                perpEncs.add(EncoderRef(0, 2))
-                            }
-                            is TwoDeadWheelLocalizer -> {
-                                encoderGroups.add(
-                                    LynxQuadratureEncoderGroup(
-                                        hardwareMap.getAll(LynxModule::class.java),
-                                        listOf(localizer.par, localizer.perp),
-                                    ),
-                                )
-                                parEncs.add(EncoderRef(0, 0))
-                                perpEncs.add(EncoderRef(0, 1))
-                            }
-                            is PinpointLocalizer -> {
-                                val pv = makePinpointView(localizer)
-                                encoderGroups.add(PinpointEncoderGroup(pv))
-                                parEncs.add(EncoderRef(0, 0))
-                                perpEncs.add(EncoderRef(0, 1))
-                                lazyImu = PinpointIMU(pv)
-                            }
-                            is OTOSLocalizer -> {
-                                encoderGroups.add(OTOSEncoderGroup(localizer.otos))
-                                parEncs.add(EncoderRef(0, 0))
-                                perpEncs.add(EncoderRef(0, 1))
-                                lazyImu = OTOSIMU(localizer.otos)
-                            }
-                            else -> {
-                                throw RuntimeException(
-                                    "unknown localizer: " + td.localizer.javaClass.name,
-                                )
-                            }
-                        }
 
-                        return DriveView(
-                            DriveType.TANK,
-                            TankDrive.PARAMS.inPerTick,
-                            TankDrive.PARAMS.maxWheelVel,
-                            TankDrive.PARAMS.minProfileAccel,
-                            TankDrive.PARAMS.maxProfileAccel,
-                            encoderGroups,
-                            td.leftMotors,
-                            td.rightMotors,
-                            leftEncs,
-                            rightEncs,
-                            parEncs,
-                            perpEncs,
-                            lazyImu,
-                            td.voltageSensor,
-                            {
-                                MotorFeedforward(
-                                    TankDrive.PARAMS.kS,
-                                    TankDrive.PARAMS.kV / TankDrive.PARAMS.inPerTick,
-                                    TankDrive.PARAMS.kA / TankDrive.PARAMS.inPerTick,
+                                return DriveView(
+                                    DriveType.MECANUM,
+                                    MecanumDrive.PARAMS.inPerTick,
+                                    MecanumDrive.PARAMS.maxWheelVel,
+                                    MecanumDrive.PARAMS.minProfileAccel,
+                                    MecanumDrive.PARAMS.maxProfileAccel,
+                                    encoderGroups,
+                                    listOf(md.leftFront, md.leftBack),
+                                    listOf(md.rightFront, md.rightBack),
+                                    leftEncs,
+                                    rightEncs,
+                                    parEncs,
+                                    perpEncs,
+                                    lazyImu,
+                                    md.voltageSensor,
+                                    {
+                                        MotorFeedforward(
+                                            MecanumDrive.PARAMS.kS,
+                                            MecanumDrive.PARAMS.kV / MecanumDrive.PARAMS.inPerTick,
+                                            MecanumDrive.PARAMS.kA / MecanumDrive.PARAMS.inPerTick,
+                                        )
+                                    },
+                                    0,
                                 )
-                            },
-                            0,
-                        )
+                            }
                         }
-                    }
-            } else {
-                throw RuntimeException()
-            }
+                    TankDrive::class.java ->
+                        object : DriveViewFactory {
+                            override fun make(hardwareMap: HardwareMap): DriveView {
+                                val td = TankDrive(hardwareMap, Pose2d(0.0, 0.0, 0.0))
+                                var lazyImu: LazyImu = td.lazyImu
+
+                                val encoderGroups = mutableListOf<EncoderGroup>()
+                                val leftEncs = mutableListOf<EncoderRef>()
+                                val rightEncs = mutableListOf<EncoderRef>()
+                                val parEncs = mutableListOf<EncoderRef>()
+                                val perpEncs = mutableListOf<EncoderRef>()
+                                when (val localizer = td.localizer) {
+                                    is TankDrive.DriveLocalizer -> {
+                                        val allEncoders = localizer.leftEncs + localizer.rightEncs
+                                        encoderGroups.add(
+                                            LynxQuadratureEncoderGroup(
+                                                hardwareMap.getAll(LynxModule::class.java),
+                                                allEncoders,
+                                            )
+                                        )
+                                        for (i in localizer.leftEncs.indices) {
+                                            leftEncs.add(EncoderRef(0, i))
+                                        }
+                                        for (i in localizer.rightEncs.indices) {
+                                            rightEncs.add(
+                                                EncoderRef(0, localizer.leftEncs.size + i)
+                                            )
+                                        }
+                                    }
+                                    is ThreeDeadWheelLocalizer -> {
+                                        encoderGroups.add(
+                                            LynxQuadratureEncoderGroup(
+                                                hardwareMap.getAll(LynxModule::class.java),
+                                                listOf(
+                                                    localizer.par0,
+                                                    localizer.par1,
+                                                    localizer.perp,
+                                                ),
+                                            )
+                                        )
+                                        parEncs.add(EncoderRef(0, 0))
+                                        parEncs.add(EncoderRef(0, 1))
+                                        perpEncs.add(EncoderRef(0, 2))
+                                    }
+                                    is TwoDeadWheelLocalizer -> {
+                                        encoderGroups.add(
+                                            LynxQuadratureEncoderGroup(
+                                                hardwareMap.getAll(LynxModule::class.java),
+                                                listOf(localizer.par, localizer.perp),
+                                            )
+                                        )
+                                        parEncs.add(EncoderRef(0, 0))
+                                        perpEncs.add(EncoderRef(0, 1))
+                                    }
+                                    is PinpointLocalizer -> {
+                                        val pv = makePinpointView(localizer)
+                                        encoderGroups.add(PinpointEncoderGroup(pv))
+                                        parEncs.add(EncoderRef(0, 0))
+                                        perpEncs.add(EncoderRef(0, 1))
+                                        lazyImu = PinpointIMU(pv)
+                                    }
+                                    is OTOSLocalizer -> {
+                                        encoderGroups.add(OTOSEncoderGroup(localizer.otos))
+                                        parEncs.add(EncoderRef(0, 0))
+                                        perpEncs.add(EncoderRef(0, 1))
+                                        lazyImu = OTOSIMU(localizer.otos)
+                                    }
+                                    else ->
+                                        error("unknown localizer: ${td.localizer.javaClass.name}")
+                                }
+
+                                return DriveView(
+                                    DriveType.TANK,
+                                    TankDrive.PARAMS.inPerTick,
+                                    TankDrive.PARAMS.maxWheelVel,
+                                    TankDrive.PARAMS.minProfileAccel,
+                                    TankDrive.PARAMS.maxProfileAccel,
+                                    encoderGroups,
+                                    td.leftMotors,
+                                    td.rightMotors,
+                                    leftEncs,
+                                    rightEncs,
+                                    parEncs,
+                                    perpEncs,
+                                    lazyImu,
+                                    td.voltageSensor,
+                                    {
+                                        MotorFeedforward(
+                                            TankDrive.PARAMS.kS,
+                                            TankDrive.PARAMS.kV / TankDrive.PARAMS.inPerTick,
+                                            TankDrive.PARAMS.kA / TankDrive.PARAMS.inPerTick,
+                                        )
+                                    },
+                                    0,
+                                )
+                            }
+                        }
+                    else -> error("Unknown TuningOpModes.DRIVE_CLASS: $DRIVE_CLASS")
+                }
 
             manager.register(metaForClass(AngularRampLogger::class.java), AngularRampLogger(dvf))
             manager.register(metaForClass(ForwardPushTest::class.java), ForwardPushTest(dvf))
@@ -345,16 +341,31 @@ class TuningOpModes private constructor() {
                 DeadWheelDirectionDebugger(dvf),
             )
 
-            manager.register(metaForClass(ManualFeedbackTuner::class.java), ManualFeedbackTuner::class.java)
+            manager.register(
+                metaForClass(ManualFeedbackTuner::class.java),
+                ManualFeedbackTuner::class.java,
+            )
             manager.register(metaForClass(SplineTest::class.java), SplineTest::class.java)
-            manager.register(metaForClass(LocalizationTest::class.java), LocalizationTest::class.java)
+            manager.register(
+                metaForClass(LocalizationTest::class.java),
+                LocalizationTest::class.java,
+            )
 
             // MARS extensions: automatic on-robot tuners for the feedforward constants and feedback
             // gains
-            manager.register(metaForClass(YawCouplingTuner::class.java), YawCouplingTuner::class.java)
-            manager.register(metaForClass(AxialFeedforwardTuner::class.java), AxialFeedforwardTuner::class.java)
+            manager.register(
+                metaForClass(YawCouplingTuner::class.java),
+                YawCouplingTuner::class.java,
+            )
+            manager.register(
+                metaForClass(AxialFeedforwardTuner::class.java),
+                AxialFeedforwardTuner::class.java,
+            )
             manager.register(metaForClass(TrackWidthTuner::class.java), TrackWidthTuner::class.java)
-            manager.register(metaForClass(PathFeedbackGainTuner::class.java), PathFeedbackGainTuner::class.java)
+            manager.register(
+                metaForClass(PathFeedbackGainTuner::class.java),
+                PathFeedbackGainTuner::class.java,
+            )
             if (DRIVE_CLASS == MecanumDrive::class.java) {
                 manager.register(
                     metaForClass(LateralFeedforwardTuner::class.java),
@@ -366,7 +377,10 @@ class TuningOpModes private constructor() {
                 metaForClass(OTOSAngularScalarTuner::class.java),
                 OTOSAngularScalarTuner(dvf),
             )
-            manager.register(metaForClass(OTOSLinearScalarTuner::class.java), OTOSLinearScalarTuner(dvf))
+            manager.register(
+                metaForClass(OTOSLinearScalarTuner::class.java),
+                OTOSLinearScalarTuner(dvf),
+            )
             manager.register(
                 metaForClass(OTOSHeadingOffsetTuner::class.java),
                 OTOSHeadingOffsetTuner(dvf),
@@ -376,9 +390,9 @@ class TuningOpModes private constructor() {
                 OTOSPositionOffsetTuner(dvf),
             )
 
-            FtcDashboard.getInstance()
-                .withConfigRoot { configRoot ->
-                    for (c in listOf(
+            FtcDashboard.getInstance().withConfigRoot { configRoot ->
+                for (c in
+                    listOf(
                         AngularRampLogger::class.java,
                         ForwardRampLogger::class.java,
                         LateralRampLogger::class.java,
@@ -392,12 +406,12 @@ class TuningOpModes private constructor() {
                         PathFeedbackGainTuner::class.java,
                         TunerRegression::class.java,
                     )) {
-                        configRoot.putVariable(
-                            c.simpleName,
-                            ReflectionConfig.createVariableFromClass(c),
-                        )
-                    }
+                    configRoot.putVariable(
+                        c.simpleName,
+                        ReflectionConfig.createVariableFromClass(c),
+                    )
                 }
+            }
         }
     }
 }

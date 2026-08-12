@@ -1,24 +1,29 @@
 #!/bin/bash
-# Format staged Java files before commit using google-java-format (AOSP style).
+# Format staged source before commit:
+#   - Java:   google-java-format (AOSP style, 4-space)
+#   - Kotlin: ktfmt (--kotlinlang-style, 4-space)
 #
-# Requires Java 17+ (matches TeamCode sourceCompatibility) and a compatible
-# google-java-format all-deps jar. Pin the jar version — "latest" GJF often
-# needs a newer JDK than teams have for FTC (e.g. 1.29+ needs JDK 21+ features
-# that Java 17 does not ship).
+# Requires Java 17+ (matches TeamCode sourceCompatibility) and pinned
+# all-deps jars under $HOME/.githooks (or override env vars below).
 #
-# Default jar: $HOME/.githooks/google-java-format.jar
-# Pin:         google-java-format 1.28.0 (last release that runs on JDK 17)
+# Pin notes:
+#   google-java-format 1.28.0 — last release that runs on JDK 17 (1.29+ needs newer JDK)
+#   ktfmt 0.64 — needs JDK 11+; with-dependencies jar
 #
 # Set up once per clone via preflight-check: it runs
 #   git config core.hooksPath .githooks
-# and can download the pinned jar.
+# and can download the pinned jars.
 
 set -euo pipefail
 
 # Keep in sync with preflight-check.sh / preflight-check.bat
 GJF_VERSION="1.28.0"
 GJF_URL="https://github.com/google/google-java-format/releases/download/v${GJF_VERSION}/google-java-format-${GJF_VERSION}-all-deps.jar"
-JAR="${GOOGLE_JAVA_FORMAT_JAR:-$HOME/.githooks/google-java-format.jar}"
+GJF_JAR="${GOOGLE_JAVA_FORMAT_JAR:-$HOME/.githooks/google-java-format.jar}"
+
+KTFMT_VERSION="0.64"
+KTFMT_URL="https://github.com/Kotlin/ktfmt/releases/download/v${KTFMT_VERSION}/ktfmt-${KTFMT_VERSION}-with-dependencies.jar"
+KTFMT_JAR="${KTFMT_FORMAT_JAR:-$HOME/.githooks/ktfmt.jar}"
 
 find_java17() {
     is_java17() {
@@ -78,51 +83,95 @@ find_java17() {
 }
 
 # Quick self-test: newer GJF jars throw NoClassDefFoundError: JCAnyPattern on JDK 17.
-jar_works_with_java() {
+gjf_works_with_java() {
     local java_bin="$1" jar="$2"
     echo 'class _GjfProbe { void m() { int x = 1; } }' \
         | "$java_bin" -jar "$jar" --aosp - >/dev/null 2>&1
 }
 
-STAGED=$(git diff --cached --name-only --diff-filter=ACM | grep '\.java$' || true)
-[[ -z "$STAGED" ]] && exit 0
+# ktfmt accepts stdin → stdout; use that as a lightweight jar/runtime probe.
+ktfmt_works_with_java() {
+    local java_bin="$1" jar="$2"
+    echo 'fun main(){val x=1}' \
+        | "$java_bin" -jar "$jar" --kotlinlang-style - >/dev/null 2>&1
+}
 
-if [[ ! -f "$JAR" ]]; then
-    jar_dir=$(dirname "$JAR")
-    echo "error: google-java-format.jar not found at $JAR" >&2
-    echo "       Run ./preflight-check.sh (or preflight-check.bat) to download v${GJF_VERSION}," >&2
-    echo "       or: mkdir -p \"${jar_dir}\" && curl -fsSL -o \"${JAR}\" \"${GJF_URL}\"" >&2
-    exit 1
-fi
+STAGED_JAVA=$(git diff --cached --name-only --diff-filter=ACM | grep '\.java$' || true)
+STAGED_KT=$(git diff --cached --name-only --diff-filter=ACM | grep '\.kt$' || true)
+
+[[ -z "$STAGED_JAVA" && -z "$STAGED_KT" ]] && exit 0
 
 if ! JAVA=$(find_java17); then
-    echo "error: need Java 17+ to run google-java-format (project sourceCompatibility is 17)." >&2
+    echo "error: need Java 17+ to run source formatters (project sourceCompatibility is 17)." >&2
     echo "       Install a JDK 17+ and ensure it is on PATH or JAVA_HOME." >&2
     exit 1
 fi
 
-if ! jar_works_with_java "$JAVA" "$JAR"; then
-    echo "error: $JAR is not compatible with $("$JAVA" -version 2>&1 | head -1)." >&2
-    echo "       google-java-format 1.29+ needs a newer JDK than many FTC setups have." >&2
-    echo "       Install the pinned v${GJF_VERSION} jar:" >&2
-    echo "         curl -fsSL -o \"$JAR\" \"$GJF_URL\"" >&2
-    echo "       Or re-run ./preflight-check.sh to repair it." >&2
-    exit 1
+FAILED=0
+
+# ── Java (google-java-format) ───────────────────────────────────────────────
+if [[ -n "$STAGED_JAVA" ]]; then
+    if [[ ! -f "$GJF_JAR" ]]; then
+        jar_dir=$(dirname "$GJF_JAR")
+        echo "error: google-java-format.jar not found at $GJF_JAR" >&2
+        echo "       Run ./preflight-check.sh (or preflight-check.bat) to download v${GJF_VERSION}," >&2
+        echo "       or: mkdir -p \"${jar_dir}\" && curl -fsSL -o \"${GJF_JAR}\" \"${GJF_URL}\"" >&2
+        exit 1
+    fi
+
+    if ! gjf_works_with_java "$JAVA" "$GJF_JAR"; then
+        echo "error: $GJF_JAR is not compatible with $("$JAVA" -version 2>&1 | head -1)." >&2
+        echo "       google-java-format 1.29+ needs a newer JDK than many FTC setups have." >&2
+        echo "       Install the pinned v${GJF_VERSION} jar:" >&2
+        echo "         curl -fsSL -o \"$GJF_JAR\" \"$GJF_URL\"" >&2
+        echo "       Or re-run ./preflight-check.sh to repair it." >&2
+        exit 1
+    fi
+
+    while IFS= read -r file; do
+        [[ -f "$file" ]] || continue
+        if ! "$JAVA" -jar "$GJF_JAR" --aosp --replace "$file"; then
+            echo "error: google-java-format failed on $file" >&2
+            FAILED=1
+            continue
+        fi
+        git add -- "$file"
+    done <<< "$STAGED_JAVA"
 fi
 
-FAILED=0
-while IFS= read -r file; do
-    [[ -f "$file" ]] || continue
-    if ! "$JAVA" -jar "$JAR" --aosp --replace "$file"; then
-        echo "error: google-java-format failed on $file" >&2
-        FAILED=1
-        continue
+# ── Kotlin (ktfmt) ──────────────────────────────────────────────────────────
+if [[ -n "$STAGED_KT" ]]; then
+    if [[ ! -f "$KTFMT_JAR" ]]; then
+        jar_dir=$(dirname "$KTFMT_JAR")
+        echo "error: ktfmt.jar not found at $KTFMT_JAR" >&2
+        echo "       Run ./preflight-check.sh (or preflight-check.bat) to download v${KTFMT_VERSION}," >&2
+        echo "       or: mkdir -p \"${jar_dir}\" && curl -fsSL -o \"${KTFMT_JAR}\" \"${KTFMT_URL}\"" >&2
+        exit 1
     fi
-    git add -- "$file"
-done <<< "$STAGED"
+
+    if ! ktfmt_works_with_java "$JAVA" "$KTFMT_JAR"; then
+        echo "error: $KTFMT_JAR failed under $("$JAVA" -version 2>&1 | head -1)." >&2
+        echo "       Install the pinned v${KTFMT_VERSION} jar:" >&2
+        echo "         curl -fsSL -o \"$KTFMT_JAR\" \"$KTFMT_URL\"" >&2
+        echo "       Or re-run ./preflight-check.sh to repair it." >&2
+        exit 1
+    fi
+
+    while IFS= read -r file; do
+        [[ -f "$file" ]] || continue
+        # --kotlinlang-style: 4-space block indent (pairs with google-java-format --aosp).
+        # --quiet: suppress per-file "Done formatting" noise on successful runs.
+        if ! "$JAVA" -jar "$KTFMT_JAR" --kotlinlang-style --quiet "$file"; then
+            echo "error: ktfmt failed on $file" >&2
+            FAILED=1
+            continue
+        fi
+        git add -- "$file"
+    done <<< "$STAGED_KT"
+fi
 
 if [[ "$FAILED" -ne 0 ]]; then
-    echo "error: pre-commit Java format failed; commit aborted." >&2
+    echo "error: pre-commit format failed; commit aborted." >&2
     exit 1
 fi
 

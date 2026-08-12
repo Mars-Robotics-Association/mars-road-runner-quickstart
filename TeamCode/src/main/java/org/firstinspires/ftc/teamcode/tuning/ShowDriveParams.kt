@@ -10,16 +10,16 @@ import org.firstinspires.ftc.teamcode.TwoDeadWheelLocalizer
 import org.firstinspires.ftc.teamcode.opmodes.base.MarsLinearOpMode
 
 /**
- * Read-only dump of the live drive / localizer `PARAMS` statics — one place to copy values
- * after chaining automatic tuners in a single RC process.
+ * Read-only dump of the live drive / localizer `PARAMS` statics — one place to copy values after
+ * chaining automatic tuners in a single RC process.
  *
- * <p>Does not need a drive instance. Values are whatever is in memory now: source defaults after a
+ * Does not need a drive instance. Values are whatever is in memory now: source defaults after a
  * cold start, or session writes from the automatic tuners if you ran them without restarting. Paste
  * into the corresponding `Params` classes before restart or redeploy to keep them.
  *
- * <p>Registered under the Driver Station <b>Utility</b> menu (SDK 11.2+). Drive class follows
- * [TuningOpModes.DRIVE_CLASS]; localizer offsets for Pinpoint / dead wheels / OTOS are always
- * shown so mixed setups still have one copy page.
+ * Registered under the Driver Station **Utility** menu (SDK 11.2+). Drive class follows
+ * [TuningOpModes.DRIVE_CLASS]; localizer offsets for Pinpoint / dead wheels / OTOS are always shown
+ * so mixed setups still have one copy page.
  */
 @Utility(
     name = "Show Drive Params",
@@ -35,14 +35,13 @@ class ShowDriveParams : MarsLinearOpMode() {
             telemetry.addLine("kV / kA shown as scientific notation for tick-unit pasting.")
             telemetry.addLine()
 
-            if (TuningOpModes.DRIVE_CLASS == MecanumDrive::class.java) {
-                dumpMecanum()
-            } else if (TuningOpModes.DRIVE_CLASS == TankDrive::class.java) {
-                dumpTank()
-            } else {
-                telemetry.addLine(
-                    "Unknown TuningOpModes.DRIVE_CLASS: " + TuningOpModes.DRIVE_CLASS,
-                )
+            when (TuningOpModes.DRIVE_CLASS) {
+                MecanumDrive::class.java -> dumpMecanum()
+                TankDrive::class.java -> dumpTank()
+                else ->
+                    telemetry.addLine(
+                        "Unknown TuningOpModes.DRIVE_CLASS: ${TuningOpModes.DRIVE_CLASS}"
+                    )
             }
 
             telemetry.addLine()
