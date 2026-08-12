@@ -72,20 +72,21 @@ class ColorDistanceSensor(revV3: Boolean, hardwareMap: HardwareMap, name: String
     }
 
     companion object {
-        private val colorNames: LUT<Float, String> = LUT<Float, String>().apply {
-            add(0f, "Red")
-            add(30f, "Orange")
-            add(60f, "Yellow")
-            add(90f, "Chartruese")
-            add(120f, "Green")
-            add(150f, "Spring")
-            add(180f, "Cyan")
-            add(210f, "Azure")
-            add(240f, "Blue")
-            add(270f, "Violet")
-            add(300f, "Magenta")
-            add(330f, "Rose")
-        }
+        private val colorNames: LUT<Float, String> =
+            LUT<Float, String>().apply {
+                add(0f, "Red")
+                add(30f, "Orange")
+                add(60f, "Yellow")
+                add(90f, "Chartruese")
+                add(120f, "Green")
+                add(150f, "Spring")
+                add(180f, "Cyan")
+                add(210f, "Azure")
+                add(240f, "Blue")
+                add(270f, "Violet")
+                add(300f, "Magenta")
+                add(330f, "Rose")
+            }
 
         @JvmStatic
         fun hueToColorName(hue: Float): String {

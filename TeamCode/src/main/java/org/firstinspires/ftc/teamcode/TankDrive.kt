@@ -34,7 +34,6 @@ import com.acmerobotics.roadrunner.ftc.Encoder
 import com.acmerobotics.roadrunner.ftc.FlightRecorder
 import com.acmerobotics.roadrunner.ftc.LazyHardwareMapImu
 import com.acmerobotics.roadrunner.ftc.LazyImu
-
 import com.acmerobotics.roadrunner.ftc.OverflowEncoder
 import com.acmerobotics.roadrunner.ftc.PositionVelocityPair
 import com.acmerobotics.roadrunner.ftc.RawEncoder
@@ -46,11 +45,6 @@ import com.qualcomm.robotcore.hardware.DcMotor
 import com.qualcomm.robotcore.hardware.DcMotorEx
 import com.qualcomm.robotcore.hardware.HardwareMap
 import com.qualcomm.robotcore.hardware.VoltageSensor
-import org.firstinspires.ftc.teamcode.messages.DriveCommandMessage
-import org.firstinspires.ftc.teamcode.messages.PoseMessage
-import org.firstinspires.ftc.teamcode.messages.TankCommandMessage
-import org.firstinspires.ftc.teamcode.messages.TankLocalizerInputsMessage
-import org.firstinspires.ftc.teamcode.opmodes.base.MarsLinearOpMode
 import java.util.Collections
 import java.util.LinkedList
 import java.util.Objects
@@ -58,9 +52,15 @@ import java.util.function.DoubleSupplier
 import kotlin.math.PI
 import kotlin.math.ceil
 import kotlin.math.max
+import org.firstinspires.ftc.teamcode.messages.DriveCommandMessage
+import org.firstinspires.ftc.teamcode.messages.PoseMessage
+import org.firstinspires.ftc.teamcode.messages.TankCommandMessage
+import org.firstinspires.ftc.teamcode.messages.TankLocalizerInputsMessage
+import org.firstinspires.ftc.teamcode.opmodes.base.MarsLinearOpMode
 
 @Config
-class TankDrive private constructor(
+class TankDrive
+private constructor(
     hardwareMap: HardwareMap,
     pose: Pose2d,
     voltageGetter: DoubleSupplier?,
@@ -131,12 +131,11 @@ class TankDrive private constructor(
     }
 
     companion object {
-        @JvmField
-        var PARAMS = Params()
+        @JvmField var PARAMS = Params()
 
         /**
-         * Frame-owned drive for [MarsLinearOpMode]: uses `batteryVoltage` for FF and does
-         * not change bulk caching (caller already set MANUAL via `initRobot()` / BulkReads).
+         * Frame-owned drive for [MarsLinearOpMode]: uses `batteryVoltage` for FF and does not
+         * change bulk caching (caller already set MANUAL via `initRobot()` / BulkReads).
          *
          * @param batteryVoltage typically `this::batteryVoltage` after `initRobot()`
          */
@@ -158,15 +157,15 @@ class TankDrive private constructor(
      */
     constructor(hardwareMap: HardwareMap, pose: Pose2d) : this(hardwareMap, pose, null, true)
 
-    @JvmField
-    val kinematics = TankKinematics(PARAMS.inPerTick * PARAMS.trackWidthTicks)
+    @JvmField val kinematics = TankKinematics(PARAMS.inPerTick * PARAMS.trackWidthTicks)
 
     @JvmField
-    val defaultTurnConstraints = TurnConstraints(
-        PARAMS.maxAngVel,
-        -PARAMS.maxAngAccel,
-        PARAMS.maxAngAccel,
-    )
+    val defaultTurnConstraints =
+        TurnConstraints(
+            PARAMS.maxAngVel,
+            -PARAMS.maxAngAccel,
+            PARAMS.maxAngAccel,
+        )
 
     // A single WheelVoltageConstraint instance serves as both the velocity and the acceleration
     // constraint when PARAMS.useWheelVoltageConstraint is set; null otherwise. It must be declared
@@ -174,35 +173,29 @@ class TankDrive private constructor(
     private val wheelVoltageConstraint: TankKinematics.WheelVoltageConstraint? =
         if (PARAMS.useWheelVoltageConstraint) makeWheelVoltageConstraint() else null
 
-    @JvmField
-    val defaultVelConstraint: VelConstraint = makeDefaultVelConstraint()
+    @JvmField val defaultVelConstraint: VelConstraint = makeDefaultVelConstraint()
 
     @JvmField
     val defaultAccelConstraint: AccelConstraint =
         wheelVoltageConstraint
             ?: ProfileAccelConstraint(PARAMS.minProfileAccel, PARAMS.maxProfileAccel)
 
-    @JvmField
-    val leftMotors: List<DcMotorEx>
+    @JvmField val leftMotors: List<DcMotorEx>
 
-    @JvmField
-    val rightMotors: List<DcMotorEx>
+    @JvmField val rightMotors: List<DcMotorEx>
 
-    @JvmField
-    val lazyImu: LazyImu
+    @JvmField val lazyImu: LazyImu
 
-    @JvmField
-    val voltageSensor: VoltageSensor
+    @JvmField val voltageSensor: VoltageSensor
 
     /**
      * Battery voltage (volts) for feedforward compensation. Stock constructor uses
-     * [VoltageSensor.getVoltage] each sample; [forMarsLinear] uses the OpMode frame cache
-     * (e.g. [MarsLinearOpMode.batteryVoltage]).
+     * [VoltageSensor.getVoltage] each sample; [forMarsLinear] uses the OpMode frame cache (e.g.
+     * [MarsLinearOpMode.batteryVoltage]).
      */
     private val voltageGetter: DoubleSupplier
 
-    @JvmField
-    val localizer: Localizer
+    @JvmField val localizer: Localizer
 
     private val poseHistory = LinkedList<Pose2d>()
 
@@ -213,15 +206,17 @@ class TankDrive private constructor(
     private val tankCommandWriter = DownsampledWriter("TANK_COMMAND", 50_000_000)
 
     private fun makeWheelVoltageConstraint(): TankKinematics.WheelVoltageConstraint {
-        val feedforward = MotorFeedforward(
-            PARAMS.kS,
-            PARAMS.kV / PARAMS.inPerTick,
-            PARAMS.kA / PARAMS.inPerTick,
-        )
-        val yawCoupling = YawCouplingFeedforward(
-            PARAMS.yawCouplingKsAxial,
-            PARAMS.yawCouplingKvAxial,
-        )
+        val feedforward =
+            MotorFeedforward(
+                PARAMS.kS,
+                PARAMS.kV / PARAMS.inPerTick,
+                PARAMS.kA / PARAMS.inPerTick,
+            )
+        val yawCoupling =
+            YawCouplingFeedforward(
+                PARAMS.yawCouplingKsAxial,
+                PARAMS.yawCouplingKvAxial,
+            )
         return kinematics.WheelVoltageConstraint(
             feedforward,
             yawCoupling,
@@ -274,11 +269,12 @@ class TankDrive private constructor(
         // TODO: make sure your config has an IMU with this name (can be BNO or BHI)
         //   see
         // https://ftc-docs.firstinspires.org/en/latest/hardware_and_software_configuration/configuring/index.html
-        lazyImu = LazyHardwareMapImu(
-            hardwareMap,
-            "imu",
-            RevHubOrientationOnRobot(PARAMS.logoFacingDirection, PARAMS.usbFacingDirection),
-        )
+        lazyImu =
+            LazyHardwareMapImu(
+                hardwareMap,
+                "imu",
+                RevHubOrientationOnRobot(PARAMS.logoFacingDirection, PARAMS.usbFacingDirection),
+            )
 
         voltageSensor = hardwareMap.voltageSensor.iterator().next()
         this.voltageGetter = voltageGetter ?: DoubleSupplier { voltageSensor.voltage }
@@ -369,22 +365,25 @@ class TankDrive private constructor(
                 return PoseVelocity2d(Vector2d(0.0, 0.0), 0.0)
             }
 
-            val twist = kinematics.forward(
-                TankKinematics.WheelIncrements(
-                    DualNum<Time>(
-                        doubleArrayOf(
-                            meanLeftPos - lastLeftPos,
-                            meanLeftVel,
-                        ),
-                    ).times(PARAMS.inPerTick),
-                    DualNum<Time>(
-                        doubleArrayOf(
-                            meanRightPos - lastRightPos,
-                            meanRightVel,
-                        ),
-                    ).times(PARAMS.inPerTick),
-                ),
-            )
+            val twist =
+                kinematics.forward(
+                    TankKinematics.WheelIncrements(
+                        DualNum<Time>(
+                                doubleArrayOf(
+                                    meanLeftPos - lastLeftPos,
+                                    meanLeftVel,
+                                )
+                            )
+                            .times(PARAMS.inPerTick),
+                        DualNum<Time>(
+                                doubleArrayOf(
+                                    meanRightPos - lastRightPos,
+                                    meanRightVel,
+                                )
+                            )
+                            .times(PARAMS.inPerTick),
+                    )
+                )
 
             lastLeftPos = meanLeftPos
             lastRightPos = meanRightPos
@@ -419,28 +418,28 @@ class TankDrive private constructor(
     /**
      * Applies a follower velocity/acceleration command to the wheels through the full production
      * feedforward path: drive constants, yaw-coupling voltages, and battery voltage compensation.
-     * Shared by [FollowTrajectoryAction] and the feedback-gain tuner so gain tests exercise
-     * exactly the voltages the follower applies.
+     * Shared by [FollowTrajectoryAction] and the feedback-gain tuner so gain tests exercise exactly
+     * the voltages the follower applies.
      */
     fun setDriveCommand(command: PoseVelocity2dDual<Time>) {
         val wheelVels = kinematics.inverse(command)
         val voltage = getBatteryVoltage()
-        val feedforward = MotorFeedforward(
-            PARAMS.kS,
-            PARAMS.kV / PARAMS.inPerTick,
-            PARAMS.kA / PARAMS.inPerTick,
-        )
+        val feedforward =
+            MotorFeedforward(
+                PARAMS.kS,
+                PARAMS.kV / PARAMS.inPerTick,
+                PARAMS.kA / PARAMS.inPerTick,
+            )
 
         // Yaw-coupling feedforward: a per-wheel voltage that cancels the parasitic yaw from
         // forward/back translation. Entries follow wheel order (left, right). Zero constants
         // (the default) make this a no-op.
-        val yawCoupling = YawCouplingFeedforward(PARAMS.yawCouplingKsAxial, PARAMS.yawCouplingKvAxial)
+        val yawCoupling =
+            YawCouplingFeedforward(PARAMS.yawCouplingKsAxial, PARAMS.yawCouplingKvAxial)
         val yawCouplingVoltages = kinematics.yawCouplingVoltages(yawCoupling, command.value())
 
-        val leftPower =
-            (feedforward.compute(wheelVels.left) + yawCouplingVoltages[0]) / voltage
-        val rightPower =
-            (feedforward.compute(wheelVels.right) + yawCouplingVoltages[1]) / voltage
+        val leftPower = (feedforward.compute(wheelVels.left) + yawCouplingVoltages[0]) / voltage
+        val rightPower = (feedforward.compute(wheelVels.right) + yawCouplingVoltages[1]) / voltage
         tankCommandWriter.write(TankCommandMessage(voltage, leftPower, rightPower))
 
         for (m in leftMotors) {
@@ -452,8 +451,7 @@ class TankDrive private constructor(
     }
 
     inner class FollowTrajectoryAction(t: TimeTrajectory) : Action {
-        @JvmField
-        val timeTrajectory: TimeTrajectory = t
+        @JvmField val timeTrajectory: TimeTrajectory = t
 
         private var beginTs = -1.0
 
@@ -461,11 +459,12 @@ class TankDrive private constructor(
         private val yPoints: DoubleArray
 
         init {
-            val disps = range(
-                0.0,
-                t.path.length(),
-                max(2, ceil(t.path.length() / 2).toInt()),
-            )
+            val disps =
+                range(
+                    0.0,
+                    t.path.length(),
+                    max(2, ceil(t.path.length() / 2).toInt()),
+                )
             xPoints = DoubleArray(disps.size)
             yPoints = DoubleArray(disps.size)
             for (i in disps.indices) {
@@ -502,11 +501,13 @@ class TankDrive private constructor(
 
             updatePoseEstimate()
 
-            val command = RamseteController(
-                kinematics.trackWidth,
-                PARAMS.ramseteZeta,
-                PARAMS.ramseteBBar,
-            ).compute(x, txWorldTarget, localizer.getPose())
+            val command =
+                RamseteController(
+                        kinematics.trackWidth,
+                        PARAMS.ramseteZeta,
+                        PARAMS.ramseteBBar,
+                    )
+                    .compute(x, txWorldTarget, localizer.getPose())
             driveCommandWriter.write(DriveCommandMessage(command))
 
             setDriveCommand(command)
@@ -574,24 +575,29 @@ class TankDrive private constructor(
 
             // Positive gains act on (target - actual), matching HolonomicController's convention.
             // (The stock quickstart has the operands flipped, which makes positive gains unstable.)
-            val command = PoseVelocity2dDual(
-                Vector2dDual.constant(Vector2d(0.0, 0.0), 3),
-                txWorldTarget.heading.velocity().plus(
-                    PARAMS.turnGain *
-                        txWorldTarget.heading.value().minus(localizer.getPose().heading) +
-                        PARAMS.turnVelGain *
-                        (txWorldTarget.heading.velocity().value() - robotVelRobot.angVel),
-                ),
-            )
+            val command =
+                PoseVelocity2dDual(
+                    Vector2dDual.constant(Vector2d(0.0, 0.0), 3),
+                    txWorldTarget.heading
+                        .velocity()
+                        .plus(
+                            PARAMS.turnGain *
+                                txWorldTarget.heading.value().minus(localizer.getPose().heading) +
+                                PARAMS.turnVelGain *
+                                    (txWorldTarget.heading.velocity().value() -
+                                        robotVelRobot.angVel)
+                        ),
+                )
             driveCommandWriter.write(DriveCommandMessage(command))
 
             val wheelVels = kinematics.inverse(command)
             val voltage = getBatteryVoltage()
-            val feedforward = MotorFeedforward(
-                PARAMS.kS,
-                PARAMS.kV / PARAMS.inPerTick,
-                PARAMS.kA / PARAMS.inPerTick,
-            )
+            val feedforward =
+                MotorFeedforward(
+                    PARAMS.kS,
+                    PARAMS.kV / PARAMS.inPerTick,
+                    PARAMS.kA / PARAMS.inPerTick,
+                )
             val leftPower = feedforward.compute(wheelVels.left) / voltage
             val rightPower = feedforward.compute(wheelVels.right) / voltage
             tankCommandWriter.write(TankCommandMessage(voltage, leftPower, rightPower))

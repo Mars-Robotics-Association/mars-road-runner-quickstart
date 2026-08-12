@@ -10,10 +10,10 @@ import kotlin.math.ceil
  *
  * <p>Feedforward ramp data has a characteristic shape: below a breakaway voltage the wheel barely
  * moves and the (velocity, voltage) samples are dominated by noise; above it the relationship is
- * cleanly linear. A plain fit over every sample is biased by that noise floor, which is why the stock
- * tools leave the final line-fit to a human reading a graph. [robustFit] automates it: it sorts
- * by the independent variable and finds the lowest cutoff above which the fit is linear (its R² reaches
- * [TARGET_R2]), keeping at least [MIN_KEEP_FRACTION] of the samples so it can't "cheat"
+ * cleanly linear. A plain fit over every sample is biased by that noise floor, which is why the
+ * stock tools leave the final line-fit to a human reading a graph. [robustFit] automates it: it
+ * sorts by the independent variable and finds the lowest cutoff above which the fit is linear (its
+ * R² reaches [TARGET_R2]), keeping at least [MIN_KEEP_FRACTION] of the samples so it can't "cheat"
  * by retaining a handful of points.
  */
 @Config
@@ -31,16 +31,13 @@ class TunerRegression private constructor() {
 
     companion object {
         /** A fit reaching this coefficient of determination is treated as "linear". */
-        @JvmField
-        var TARGET_R2 = 0.95
+        @JvmField var TARGET_R2 = 0.95
 
         /** Never discard so many low-velocity samples that fewer than this fraction remain. */
-        @JvmField
-        var MIN_KEEP_FRACTION = 0.3
+        @JvmField var MIN_KEEP_FRACTION = 0.3
 
         /** Below this many samples, skip cutoff selection and just fit everything. */
-        @JvmField
-        var MIN_POINTS = 8
+        @JvmField var MIN_POINTS = 8
 
         /** Ordinary least-squares fit over every sample. */
         @JvmStatic
@@ -49,10 +46,11 @@ class TunerRegression private constructor() {
         }
 
         /**
-         * Robust fit that automatically trims the noisy low-velocity samples: it scans increasing cutoffs
-         * and returns the fit at the smallest cutoff whose R² reaches [TARGET_R2] (subject to keeping
-         * [MIN_KEEP_FRACTION] of the data). If no cutoff reaches the target — unusually noisy data —
-         * it returns the best-R² fit found so the caller can flag low confidence via [Result.r2].
+         * Robust fit that automatically trims the noisy low-velocity samples: it scans increasing
+         * cutoffs and returns the fit at the smallest cutoff whose R² reaches [TARGET_R2] (subject
+         * to keeping [MIN_KEEP_FRACTION] of the data). If no cutoff reaches the target — unusually
+         * noisy data — it returns the best-R² fit found so the caller can flag low confidence via
+         * [Result.r2].
          */
         @JvmStatic
         fun robustFit(samples: List<DoubleArray>): Result? {
@@ -120,17 +118,18 @@ class TunerRegression private constructor() {
          * Returns `x`, or `null` if the system is (near-)singular — e.g., the maneuver did not
          * excite all three feedforward terms independently.
          *
-         * <p>Used for the joint integral-form feedforward fit
-         * `∫V dt = kS·∫sign(v)dt + kV·∫v dt + kA·Δv`, where the normal-equations matrix `A`
-         * (= XᵀX) and vector `b` (= Xᵀy) are accumulated over every sample.
+         * <p>Used for the joint integral-form feedforward fit `∫V dt = kS·∫sign(v)dt + kV·∫v dt +
+         * kA·Δv`, where the normal-equations matrix `A` (= XᵀX) and vector `b` (= Xᵀy) are
+         * accumulated over every sample.
          */
         @JvmStatic
         fun solve3(A: Array<DoubleArray>, b: DoubleArray): DoubleArray? {
-            val m = arrayOf(
-                doubleArrayOf(A[0][0], A[0][1], A[0][2], b[0]),
-                doubleArrayOf(A[1][0], A[1][1], A[1][2], b[1]),
-                doubleArrayOf(A[2][0], A[2][1], A[2][2], b[2]),
-            )
+            val m =
+                arrayOf(
+                    doubleArrayOf(A[0][0], A[0][1], A[0][2], b[0]),
+                    doubleArrayOf(A[1][0], A[1][1], A[1][2], b[1]),
+                    doubleArrayOf(A[2][0], A[2][1], A[2][2], b[2]),
+                )
             for (col in 0 until 3) {
                 var pivot = col
                 for (r in col + 1 until 3) {

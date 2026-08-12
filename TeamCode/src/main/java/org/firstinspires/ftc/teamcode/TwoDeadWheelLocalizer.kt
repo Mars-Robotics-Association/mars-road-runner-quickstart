@@ -16,13 +16,13 @@ import com.acmerobotics.roadrunner.ftc.RawEncoder
 import com.qualcomm.robotcore.hardware.DcMotorEx
 import com.qualcomm.robotcore.hardware.HardwareMap
 import com.qualcomm.robotcore.hardware.IMU
+import kotlin.math.PI
+import kotlin.math.abs
+import kotlin.math.sign
 import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit
 import org.firstinspires.ftc.robotcore.external.navigation.AngularVelocity
 import org.firstinspires.ftc.robotcore.external.navigation.UnnormalizedAngleUnit
 import org.firstinspires.ftc.teamcode.messages.TwoDeadWheelInputsMessage
-import kotlin.math.PI
-import kotlin.math.abs
-import kotlin.math.sign
 
 @Config
 class TwoDeadWheelLocalizer(
@@ -37,18 +37,14 @@ class TwoDeadWheelLocalizer(
     }
 
     companion object {
-        @JvmField
-        var PARAMS = Params()
+        @JvmField var PARAMS = Params()
     }
 
-    @JvmField
-    val par: Encoder
+    @JvmField val par: Encoder
 
-    @JvmField
-    val perp: Encoder
+    @JvmField val perp: Encoder
 
-    @JvmField
-    val imu: IMU
+    @JvmField val imu: IMU
 
     private var lastParPos = 0
     private var lastPerpPos = 0
@@ -64,7 +60,8 @@ class TwoDeadWheelLocalizer(
     init {
         // TODO: make sure your config has **motors** with these names (or change them)
         //   the encoders should be plugged into the slot matching the named motor
-        //   see https://ftc-docs.firstinspires.org/en/latest/hardware_and_software_configuration/configuring/index.html
+        //   see
+        // https://ftc-docs.firstinspires.org/en/latest/hardware_and_software_configuration/configuring/index.html
         par = OverflowEncoder(RawEncoder(hardwareMap.get(DcMotorEx::class.java, "par")))
         perp = OverflowEncoder(RawEncoder(hardwareMap.get(DcMotorEx::class.java, "perp")))
 
@@ -93,15 +90,17 @@ class TwoDeadWheelLocalizer(
         val perpPosVel = perp.getPositionAndVelocity()
 
         val angles = imu.robotYawPitchRollAngles
-        // Use degrees here to work around https://github.com/FIRST-Tech-Challenge/FtcRobotController/issues/1070
+        // Use degrees here to work around
+        // https://github.com/FIRST-Tech-Challenge/FtcRobotController/issues/1070
         val angularVelocityDegrees = imu.getRobotAngularVelocity(AngleUnit.DEGREES)
-        val angularVelocity = AngularVelocity(
-            UnnormalizedAngleUnit.RADIANS,
-            Math.toRadians(angularVelocityDegrees.xRotationRate.toDouble()).toFloat(),
-            Math.toRadians(angularVelocityDegrees.yRotationRate.toDouble()).toFloat(),
-            Math.toRadians(angularVelocityDegrees.zRotationRate.toDouble()).toFloat(),
-            angularVelocityDegrees.acquisitionTime,
-        )
+        val angularVelocity =
+            AngularVelocity(
+                UnnormalizedAngleUnit.RADIANS,
+                Math.toRadians(angularVelocityDegrees.xRotationRate.toDouble()).toFloat(),
+                Math.toRadians(angularVelocityDegrees.yRotationRate.toDouble()).toFloat(),
+                Math.toRadians(angularVelocityDegrees.zRotationRate.toDouble()).toFloat(),
+                angularVelocityDegrees.acquisitionTime,
+            )
 
         FlightRecorder.write(
             "TWO_DEAD_WHEEL_INPUTS",
@@ -132,28 +131,31 @@ class TwoDeadWheelLocalizer(
         val perpPosDelta = perpPosVel.position - lastPerpPos
         val headingDelta = heading.minus(lastHeading)
 
-        val twist = Twist2dDual(
-            Vector2dDual(
-                DualNum<Time>(
-                    doubleArrayOf(
-                        parPosDelta - PARAMS.parYTicks * headingDelta,
-                        parPosVel.velocity!! - PARAMS.parYTicks * headingVel,
-                    ),
-                ).times(inPerTick),
-                DualNum<Time>(
-                    doubleArrayOf(
-                        perpPosDelta - PARAMS.perpXTicks * headingDelta,
-                        perpPosVel.velocity!! - PARAMS.perpXTicks * headingVel,
-                    ),
-                ).times(inPerTick),
-            ),
-            DualNum(
-                doubleArrayOf(
-                    headingDelta,
-                    headingVel,
+        val twist =
+            Twist2dDual(
+                Vector2dDual(
+                    DualNum<Time>(
+                            doubleArrayOf(
+                                parPosDelta - PARAMS.parYTicks * headingDelta,
+                                parPosVel.velocity!! - PARAMS.parYTicks * headingVel,
+                            )
+                        )
+                        .times(inPerTick),
+                    DualNum<Time>(
+                            doubleArrayOf(
+                                perpPosDelta - PARAMS.perpXTicks * headingDelta,
+                                perpPosVel.velocity!! - PARAMS.perpXTicks * headingVel,
+                            )
+                        )
+                        .times(inPerTick),
                 ),
-            ),
-        )
+                DualNum(
+                    doubleArrayOf(
+                        headingDelta,
+                        headingVel,
+                    )
+                ),
+            )
 
         lastParPos = parPosVel.position
         lastPerpPos = perpPosVel.position

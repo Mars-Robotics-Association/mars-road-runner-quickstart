@@ -29,21 +29,16 @@ class ThreeDeadWheelLocalizer(
     }
 
     companion object {
-        @JvmField
-        var PARAMS = Params()
+        @JvmField var PARAMS = Params()
     }
 
-    @JvmField
-    val par0: Encoder
+    @JvmField val par0: Encoder
 
-    @JvmField
-    val par1: Encoder
+    @JvmField val par1: Encoder
 
-    @JvmField
-    val perp: Encoder
+    @JvmField val perp: Encoder
 
-    @JvmField
-    val inPerTick: Double
+    @JvmField val inPerTick: Double
 
     private var lastPar0Pos = 0
     private var lastPar1Pos = 0
@@ -54,7 +49,8 @@ class ThreeDeadWheelLocalizer(
     init {
         // TODO: make sure your config has **motors** with these names (or change them)
         //   the encoders should be plugged into the slot matching the named motor
-        //   see https://ftc-docs.firstinspires.org/en/latest/hardware_and_software_configuration/configuring/index.html
+        //   see
+        // https://ftc-docs.firstinspires.org/en/latest/hardware_and_software_configuration/configuring/index.html
         par0 = OverflowEncoder(RawEncoder(hardwareMap.get(DcMotorEx::class.java, "par0")))
         par1 = OverflowEncoder(RawEncoder(hardwareMap.get(DcMotorEx::class.java, "par1")))
         perp = OverflowEncoder(RawEncoder(hardwareMap.get(DcMotorEx::class.java, "perp")))
@@ -101,32 +97,39 @@ class ThreeDeadWheelLocalizer(
         val par1PosDelta = par1PosVel.position - lastPar1Pos
         val perpPosDelta = perpPosVel.position - lastPerpPos
 
-        val twist = Twist2dDual(
-            Vector2dDual(
-                DualNum<Time>(
-                    doubleArrayOf(
-                        (PARAMS.par0YTicks * par1PosDelta - PARAMS.par1YTicks * par0PosDelta) /
-                            (PARAMS.par0YTicks - PARAMS.par1YTicks),
-                        (PARAMS.par0YTicks * par1PosVel.velocity!! - PARAMS.par1YTicks * par0PosVel.velocity!!) /
-                            (PARAMS.par0YTicks - PARAMS.par1YTicks),
-                    ),
-                ).times(inPerTick),
-                DualNum<Time>(
-                    doubleArrayOf(
-                        PARAMS.perpXTicks / (PARAMS.par0YTicks - PARAMS.par1YTicks) * (par1PosDelta - par0PosDelta) +
-                            perpPosDelta,
-                        PARAMS.perpXTicks / (PARAMS.par0YTicks - PARAMS.par1YTicks) *
-                            (par1PosVel.velocity!! - par0PosVel.velocity!!) + perpPosVel.velocity!!,
-                    ),
-                ).times(inPerTick),
-            ),
-            DualNum(
-                doubleArrayOf(
-                    (par0PosDelta - par1PosDelta) / (PARAMS.par0YTicks - PARAMS.par1YTicks),
-                    (par0PosVel.velocity!! - par1PosVel.velocity!!) / (PARAMS.par0YTicks - PARAMS.par1YTicks),
+        val twist =
+            Twist2dDual(
+                Vector2dDual(
+                    DualNum<Time>(
+                            doubleArrayOf(
+                                (PARAMS.par0YTicks * par1PosDelta -
+                                    PARAMS.par1YTicks * par0PosDelta) /
+                                    (PARAMS.par0YTicks - PARAMS.par1YTicks),
+                                (PARAMS.par0YTicks * par1PosVel.velocity!! -
+                                    PARAMS.par1YTicks * par0PosVel.velocity!!) /
+                                    (PARAMS.par0YTicks - PARAMS.par1YTicks),
+                            )
+                        )
+                        .times(inPerTick),
+                    DualNum<Time>(
+                            doubleArrayOf(
+                                PARAMS.perpXTicks / (PARAMS.par0YTicks - PARAMS.par1YTicks) *
+                                    (par1PosDelta - par0PosDelta) + perpPosDelta,
+                                PARAMS.perpXTicks / (PARAMS.par0YTicks - PARAMS.par1YTicks) *
+                                    (par1PosVel.velocity!! - par0PosVel.velocity!!) +
+                                    perpPosVel.velocity!!,
+                            )
+                        )
+                        .times(inPerTick),
                 ),
-            ),
-        )
+                DualNum(
+                    doubleArrayOf(
+                        (par0PosDelta - par1PosDelta) / (PARAMS.par0YTicks - PARAMS.par1YTicks),
+                        (par0PosVel.velocity!! - par1PosVel.velocity!!) /
+                            (PARAMS.par0YTicks - PARAMS.par1YTicks),
+                    )
+                ),
+            )
 
         lastPar0Pos = par0PosVel.position
         lastPar1Pos = par1PosVel.position

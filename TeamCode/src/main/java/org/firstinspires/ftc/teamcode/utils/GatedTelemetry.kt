@@ -4,12 +4,12 @@ import org.firstinspires.ftc.robotcore.external.Func
 import org.firstinspires.ftc.robotcore.external.Telemetry
 
 /**
- * [Telemetry] decorator that can drop `addData`/`addLine`/`speak` (and
- * related mutators) while still forwarding configuration and optional forced flushes.
+ * [Telemetry] decorator that can drop `addData`/`addLine`/`speak` (and related mutators) while
+ * still forwarding configuration and optional forced flushes.
  *
- * <p>Used by `MarsLinearOpMode` so interactive control can run faster than the DS/Dashboard
- * publish rate: callers may write telemetry every loop; only open frames pay formatting cost, and
- * only those frames are flushed with [update] / [forceUpdate].
+ * <p>Used by `MarsLinearOpMode` so interactive control can run faster than the DS/Dashboard publish
+ * rate: callers may write telemetry every loop; only open frames pay formatting cost, and only
+ * those frames are flushed with [update] / [forceUpdate].
  */
 class GatedTelemetry(private val delegate: Telemetry) : Telemetry {
     private val gatedLog: Telemetry.Log = GatedLog(delegate.log())
@@ -18,8 +18,8 @@ class GatedTelemetry(private val delegate: Telemetry) : Telemetry {
     private var open = true
 
     /**
-     * When false, `addData`/`addLine`/`speak`/`clear` and [update]
-     * are no-ops. Configuration setters still forward.
+     * When false, `addData`/`addLine`/`speak`/`clear` and [update] are no-ops. Configuration
+     * setters still forward.
      */
     fun setOpen(open: Boolean) {
         this.open = open
@@ -55,7 +55,11 @@ class GatedTelemetry(private val delegate: Telemetry) : Telemetry {
         return delegate.addData(caption, valueProducer)
     }
 
-    override fun <T> addData(caption: String, format: String, valueProducer: Func<T>): Telemetry.Item {
+    override fun <T> addData(
+        caption: String,
+        format: String,
+        valueProducer: Func<T>,
+    ): Telemetry.Item {
         if (!open) {
             return noopItem
         }
@@ -257,7 +261,11 @@ class GatedTelemetry(private val delegate: Telemetry) : Telemetry {
             return this
         }
 
-        override fun <T> addData(caption: String, format: String, valueProducer: Func<T>): Telemetry.Item {
+        override fun <T> addData(
+            caption: String,
+            format: String,
+            valueProducer: Func<T>,
+        ): Telemetry.Item {
             return this
         }
     }
@@ -275,7 +283,11 @@ class GatedTelemetry(private val delegate: Telemetry) : Telemetry {
             return noopItem
         }
 
-        override fun <T> addData(caption: String, format: String, valueProducer: Func<T>): Telemetry.Item {
+        override fun <T> addData(
+            caption: String,
+            format: String,
+            valueProducer: Func<T>,
+        ): Telemetry.Item {
             return noopItem
         }
     }

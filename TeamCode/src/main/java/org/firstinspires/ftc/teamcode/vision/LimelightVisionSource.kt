@@ -119,8 +119,7 @@ class LimelightVisionSource(
         if (mt2 != null) {
             val p = mt2.position.toUnit(DistanceUnit.INCH)
             if (p.x != 0.0 || p.y != 0.0) { // skip the field-origin zero-sentinel
-                f.mt2Pose =
-                    Pose2d(p.x, p.y, Rotation2d(mt2.orientation.getYaw(AngleUnit.RADIANS)))
+                f.mt2Pose = Pose2d(p.x, p.y, Rotation2d(mt2.orientation.getYaw(AngleUnit.RADIANS)))
             }
         }
     }
@@ -128,8 +127,8 @@ class LimelightVisionSource(
     /**
      * Pose-level ambiguity for this frame (our own PnP), or NaN when it can't be scored —
      * intrinsics unset, corners not emitted by the pipeline, or the solve failed. NaN fails the
-     * gate open. Also fills the winning tag's diagnostic fields on `f` (sol candidates, t6t*
-     * poses, tx/ty, corner bbox, skew, tag id).
+     * gate open. Also fills the winning tag's diagnostic fields on `f` (sol candidates, t6t* poses,
+     * tx/ty, corner bbox, skew, tag id).
      *
      * Aggregation is the **minimum** per-tag ambiguity over tags large enough to be reliable
      * (`ambiguityMinTagAreaPct`), falling back to the overall min if none qualify.
@@ -340,9 +339,9 @@ class LimelightVisionSource(
         }
 
         /**
-         * Captures EVERY detected fiducial's id + image corners into `f.allTagIds`/`f.allTagCorners`,
-         * in the SDK's fiducial order. Independent of calibration (raw detector output), so it runs
-         * even when the PnP ambiguity solve can't.
+         * Captures EVERY detected fiducial's id + image corners into
+         * `f.allTagIds`/`f.allTagCorners`, in the SDK's fiducial order. Independent of calibration
+         * (raw detector output), so it runs even when the PnP ambiguity solve can't.
          */
         private fun captureAllTags(result: LLResult, f: VisionFrame) {
             val fids = result.fiducialResults
@@ -418,7 +417,9 @@ class LimelightVisionSource(
             return doubleArrayOf(minX, maxX, minY, maxY)
         }
 
-        private fun usableOrNull(cal: LLResultTypes.CalibrationResult?): LLResultTypes.CalibrationResult? {
+        private fun usableOrNull(
+            cal: LLResultTypes.CalibrationResult?
+        ): LLResultTypes.CalibrationResult? {
             return if (
                 cal != null &&
                     cal.isValid &&

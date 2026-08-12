@@ -1,9 +1,9 @@
 package org.firstinspires.ftc.teamcode.vision
 
-import org.marsroboticsassociation.controllib.localization.vision.Transform3D
-import org.marsroboticsassociation.controllib.localization.vision.VisionPoseSolverConfig
 import java.util.Collections
 import java.util.HashMap
+import org.marsroboticsassociation.controllib.localization.vision.Transform3D
+import org.marsroboticsassociation.controllib.localization.vision.VisionPoseSolverConfig
 
 /**
  * Season / field AprilTag poses for the vision localizer (`field←tag`, metres, Limelight field
@@ -69,7 +69,6 @@ class FieldTagMap private constructor() {
          * DECODE goal tags 20 and 24 (`ftc2025DECODE.fmap`). Unmodifiable; safe to pass into
          * [VisionPoseSolverConfig] as-is.
          */
-        @JvmStatic
-        fun decode2025GoalTags(): Map<Int, Transform3D> = DECODE_2025_GOAL_TAGS
+        @JvmStatic fun decode2025GoalTags(): Map<Int, Transform3D> = DECODE_2025_GOAL_TAGS
     }
 }

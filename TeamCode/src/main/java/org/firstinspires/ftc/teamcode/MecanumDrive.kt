@@ -14,7 +14,6 @@ import com.acmerobotics.roadrunner.MecanumKinematics
 import com.acmerobotics.roadrunner.MinVelConstraint
 import com.acmerobotics.roadrunner.MotorFeedforward
 import com.acmerobotics.roadrunner.Pose2d
-import com.acmerobotics.roadrunner.Pose2dDual
 import com.acmerobotics.roadrunner.PoseVelocity2d
 import com.acmerobotics.roadrunner.PoseVelocity2dDual
 import com.acmerobotics.roadrunner.ProfileAccelConstraint
@@ -35,7 +34,6 @@ import com.acmerobotics.roadrunner.ftc.Encoder
 import com.acmerobotics.roadrunner.ftc.FlightRecorder
 import com.acmerobotics.roadrunner.ftc.LazyHardwareMapImu
 import com.acmerobotics.roadrunner.ftc.LazyImu
-
 import com.acmerobotics.roadrunner.ftc.OverflowEncoder
 import com.acmerobotics.roadrunner.ftc.RawEncoder
 import com.acmerobotics.roadrunner.now
@@ -47,21 +45,22 @@ import com.qualcomm.robotcore.hardware.DcMotorEx
 import com.qualcomm.robotcore.hardware.HardwareMap
 import com.qualcomm.robotcore.hardware.IMU
 import com.qualcomm.robotcore.hardware.VoltageSensor
-import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit
-import org.firstinspires.ftc.teamcode.messages.DriveCommandMessage
-import org.firstinspires.ftc.teamcode.messages.MecanumCommandMessage
-import org.firstinspires.ftc.teamcode.messages.MecanumLocalizerInputsMessage
-import org.firstinspires.ftc.teamcode.messages.PoseMessage
-import org.firstinspires.ftc.teamcode.opmodes.base.MarsLinearOpMode
 import java.util.LinkedList
 import java.util.Objects
 import java.util.function.DoubleSupplier
 import kotlin.math.PI
 import kotlin.math.ceil
 import kotlin.math.max
+import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit
+import org.firstinspires.ftc.teamcode.messages.DriveCommandMessage
+import org.firstinspires.ftc.teamcode.messages.MecanumCommandMessage
+import org.firstinspires.ftc.teamcode.messages.MecanumLocalizerInputsMessage
+import org.firstinspires.ftc.teamcode.messages.PoseMessage
+import org.firstinspires.ftc.teamcode.opmodes.base.MarsLinearOpMode
 
 @Config
-class MecanumDrive private constructor(
+class MecanumDrive
+private constructor(
     hardwareMap: HardwareMap,
     pose: Pose2d,
     voltageGetter: DoubleSupplier?,
@@ -147,12 +146,11 @@ class MecanumDrive private constructor(
     }
 
     companion object {
-        @JvmField
-        var PARAMS = Params()
+        @JvmField var PARAMS = Params()
 
         /**
-         * Frame-owned drive for [MarsLinearOpMode]: uses `batteryVoltage` for FF and does
-         * not change bulk caching (caller already set MANUAL via `initRobot()` / BulkReads).
+         * Frame-owned drive for [MarsLinearOpMode]: uses `batteryVoltage` for FF and does not
+         * change bulk caching (caller already set MANUAL via `initRobot()` / BulkReads).
          *
          * @param batteryVoltage typically `this::batteryVoltage` after `initRobot()`
          */
@@ -175,17 +173,19 @@ class MecanumDrive private constructor(
     constructor(hardwareMap: HardwareMap, pose: Pose2d) : this(hardwareMap, pose, null, true)
 
     @JvmField
-    val kinematics = MecanumKinematics(
-        PARAMS.inPerTick * PARAMS.trackWidthTicks,
-        PARAMS.inPerTick / PARAMS.lateralInPerTick,
-    )
+    val kinematics =
+        MecanumKinematics(
+            PARAMS.inPerTick * PARAMS.trackWidthTicks,
+            PARAMS.inPerTick / PARAMS.lateralInPerTick,
+        )
 
     @JvmField
-    val defaultTurnConstraints = TurnConstraints(
-        PARAMS.maxAngVel,
-        -PARAMS.maxAngAccel,
-        PARAMS.maxAngAccel,
-    )
+    val defaultTurnConstraints =
+        TurnConstraints(
+            PARAMS.maxAngVel,
+            -PARAMS.maxAngAccel,
+            PARAMS.maxAngAccel,
+        )
 
     // A single WheelVoltageConstraint instance serves as both the velocity and the acceleration
     // constraint when PARAMS.useWheelVoltageConstraint is set; null otherwise. It must be declared
@@ -193,41 +193,33 @@ class MecanumDrive private constructor(
     private val wheelVoltageConstraint: MecanumKinematics.WheelVoltageConstraint? =
         if (PARAMS.useWheelVoltageConstraint) makeWheelVoltageConstraint() else null
 
-    @JvmField
-    val defaultVelConstraint: VelConstraint = makeDefaultVelConstraint()
+    @JvmField val defaultVelConstraint: VelConstraint = makeDefaultVelConstraint()
 
     @JvmField
     val defaultAccelConstraint: AccelConstraint =
         wheelVoltageConstraint
             ?: ProfileAccelConstraint(PARAMS.minProfileAccel, PARAMS.maxProfileAccel)
 
-    @JvmField
-    val leftFront: DcMotorEx
+    @JvmField val leftFront: DcMotorEx
 
-    @JvmField
-    val leftBack: DcMotorEx
+    @JvmField val leftBack: DcMotorEx
 
-    @JvmField
-    val rightBack: DcMotorEx
+    @JvmField val rightBack: DcMotorEx
 
-    @JvmField
-    val rightFront: DcMotorEx
+    @JvmField val rightFront: DcMotorEx
 
-    @JvmField
-    val voltageSensor: VoltageSensor
+    @JvmField val voltageSensor: VoltageSensor
 
     /**
      * Battery voltage (volts) for feedforward compensation. Stock constructor uses
-     * [VoltageSensor.getVoltage] each sample; [forMarsLinear] uses the OpMode frame cache
-     * (e.g. [MarsLinearOpMode.batteryVoltage]).
+     * [VoltageSensor.getVoltage] each sample; [forMarsLinear] uses the OpMode frame cache (e.g.
+     * [MarsLinearOpMode.batteryVoltage]).
      */
     private val voltageGetter: DoubleSupplier
 
-    @JvmField
-    val lazyImu: LazyImu
+    @JvmField val lazyImu: LazyImu
 
-    @JvmField
-    val localizer: Localizer
+    @JvmField val localizer: Localizer
 
     private val poseHistory = LinkedList<Pose2d>()
 
@@ -237,11 +229,12 @@ class MecanumDrive private constructor(
     private val mecanumCommandWriter = DownsampledWriter("MECANUM_COMMAND", 50_000_000)
 
     private fun makeWheelVoltageConstraint(): MecanumKinematics.WheelVoltageConstraint {
-        val axial = MotorFeedforward(
-            PARAMS.kS,
-            PARAMS.kV / PARAMS.inPerTick,
-            PARAMS.kA / PARAMS.inPerTick,
-        )
+        val axial =
+            MotorFeedforward(
+                PARAMS.kS,
+                PARAMS.kV / PARAMS.inPerTick,
+                PARAMS.kA / PARAMS.inPerTick,
+            )
         val lateral =
             if (PARAMS.useAnisotropicFeedforward) {
                 MotorFeedforward(
@@ -252,12 +245,13 @@ class MecanumDrive private constructor(
             } else {
                 axial
             }
-        val yawCoupling = YawCouplingFeedforward(
-            PARAMS.yawCouplingKsAxial,
-            PARAMS.yawCouplingKvAxial,
-            PARAMS.yawCouplingKsLateral,
-            PARAMS.yawCouplingKvLateral,
-        )
+        val yawCoupling =
+            YawCouplingFeedforward(
+                PARAMS.yawCouplingKsAxial,
+                PARAMS.yawCouplingKvAxial,
+                PARAMS.yawCouplingKsLateral,
+                PARAMS.yawCouplingKvLateral,
+            )
         return kinematics.WheelVoltageConstraint(
             AnisotropicMotorFeedforward(axial, lateral),
             yawCoupling,
@@ -309,11 +303,12 @@ class MecanumDrive private constructor(
         // TODO: make sure your config has an IMU with this name (can be BNO or BHI)
         //   see
         // https://ftc-docs.firstinspires.org/en/latest/hardware_and_software_configuration/configuring/index.html
-        lazyImu = LazyHardwareMapImu(
-            hardwareMap,
-            "imu",
-            RevHubOrientationOnRobot(PARAMS.logoFacingDirection, PARAMS.usbFacingDirection),
-        )
+        lazyImu =
+            LazyHardwareMapImu(
+                hardwareMap,
+                "imu",
+                RevHubOrientationOnRobot(PARAMS.logoFacingDirection, PARAMS.usbFacingDirection),
+            )
 
         voltageSensor = hardwareMap.voltageSensor.iterator().next()
         this.voltageGetter = voltageGetter ?: DoubleSupplier { voltageSensor.voltage }
@@ -326,20 +321,16 @@ class MecanumDrive private constructor(
     }
 
     inner class DriveLocalizer(pose: Pose2d) : Localizer {
-        @JvmField
-        val leftFront: Encoder = OverflowEncoder(RawEncoder(this@MecanumDrive.leftFront))
+        @JvmField val leftFront: Encoder = OverflowEncoder(RawEncoder(this@MecanumDrive.leftFront))
 
-        @JvmField
-        val leftBack: Encoder = OverflowEncoder(RawEncoder(this@MecanumDrive.leftBack))
+        @JvmField val leftBack: Encoder = OverflowEncoder(RawEncoder(this@MecanumDrive.leftBack))
 
-        @JvmField
-        val rightBack: Encoder = OverflowEncoder(RawEncoder(this@MecanumDrive.rightBack))
+        @JvmField val rightBack: Encoder = OverflowEncoder(RawEncoder(this@MecanumDrive.rightBack))
 
         @JvmField
         val rightFront: Encoder = OverflowEncoder(RawEncoder(this@MecanumDrive.rightFront))
 
-        @JvmField
-        val imu: IMU = lazyImu.get()
+        @JvmField val imu: IMU = lazyImu.get()
 
         private var lastLeftFrontPos = 0
         private var lastLeftBackPos = 0
@@ -397,34 +388,39 @@ class MecanumDrive private constructor(
             }
 
             val headingDelta = heading.minus(lastHeading)
-            val twist = kinematics.forward(
-                MecanumKinematics.WheelIncrements(
-                    DualNum<Time>(
-                        doubleArrayOf(
-                            (leftFrontPosVel.position - lastLeftFrontPos).toDouble(),
-                            leftFrontPosVel.velocity!!.toDouble(),
-                        ),
-                    ).times(PARAMS.inPerTick),
-                    DualNum<Time>(
-                        doubleArrayOf(
-                            (leftBackPosVel.position - lastLeftBackPos).toDouble(),
-                            leftBackPosVel.velocity!!.toDouble(),
-                        ),
-                    ).times(PARAMS.inPerTick),
-                    DualNum<Time>(
-                        doubleArrayOf(
-                            (rightBackPosVel.position - lastRightBackPos).toDouble(),
-                            rightBackPosVel.velocity!!.toDouble(),
-                        ),
-                    ).times(PARAMS.inPerTick),
-                    DualNum<Time>(
-                        doubleArrayOf(
-                            (rightFrontPosVel.position - lastRightFrontPos).toDouble(),
-                            rightFrontPosVel.velocity!!.toDouble(),
-                        ),
-                    ).times(PARAMS.inPerTick),
-                ),
-            )
+            val twist =
+                kinematics.forward(
+                    MecanumKinematics.WheelIncrements(
+                        DualNum<Time>(
+                                doubleArrayOf(
+                                    (leftFrontPosVel.position - lastLeftFrontPos).toDouble(),
+                                    leftFrontPosVel.velocity!!.toDouble(),
+                                )
+                            )
+                            .times(PARAMS.inPerTick),
+                        DualNum<Time>(
+                                doubleArrayOf(
+                                    (leftBackPosVel.position - lastLeftBackPos).toDouble(),
+                                    leftBackPosVel.velocity!!.toDouble(),
+                                )
+                            )
+                            .times(PARAMS.inPerTick),
+                        DualNum<Time>(
+                                doubleArrayOf(
+                                    (rightBackPosVel.position - lastRightBackPos).toDouble(),
+                                    rightBackPosVel.velocity!!.toDouble(),
+                                )
+                            )
+                            .times(PARAMS.inPerTick),
+                        DualNum<Time>(
+                                doubleArrayOf(
+                                    (rightFrontPosVel.position - lastRightFrontPos).toDouble(),
+                                    rightFrontPosVel.velocity!!.toDouble(),
+                                )
+                            )
+                            .times(PARAMS.inPerTick),
+                    )
+                )
 
             lastLeftFrontPos = leftFrontPosVel.position
             lastLeftBackPos = leftBackPosVel.position
@@ -461,8 +457,8 @@ class MecanumDrive private constructor(
     /**
      * Applies a follower velocity/acceleration command to the wheels through the full production
      * feedforward path: anisotropic constants (when enabled), yaw-coupling voltages, and battery
-     * voltage compensation. Shared by [FollowTrajectoryAction] and the feedback-gain tuner so
-     * gain tests exercise exactly the voltages the follower applies.
+     * voltage compensation. Shared by [FollowTrajectoryAction] and the feedback-gain tuner so gain
+     * tests exercise exactly the voltages the follower applies.
      */
     fun setDriveCommand(command: PoseVelocity2dDual<Time>) {
         val wheelVels = kinematics.inverse(command)
@@ -477,29 +473,34 @@ class MecanumDrive private constructor(
         val rightBackFF: Double
         val rightFrontFF: Double
         if (PARAMS.useAnisotropicFeedforward) {
-            val feedforward = AnisotropicMotorFeedforward(
+            val feedforward =
+                AnisotropicMotorFeedforward(
+                    MotorFeedforward(
+                        PARAMS.kS,
+                        PARAMS.kV / PARAMS.inPerTick,
+                        PARAMS.kA / PARAMS.inPerTick,
+                    ),
+                    MotorFeedforward(
+                        PARAMS.lateralKS,
+                        PARAMS.lateralKV / PARAMS.inPerTick,
+                        PARAMS.lateralKA / PARAMS.inPerTick,
+                    ),
+                )
+            val components = kinematics.inverseComponents(command)
+            leftFrontFF =
+                feedforward.compute(components.axial.leftFront, components.lateral.leftFront)
+            leftBackFF = feedforward.compute(components.axial.leftBack, components.lateral.leftBack)
+            rightBackFF =
+                feedforward.compute(components.axial.rightBack, components.lateral.rightBack)
+            rightFrontFF =
+                feedforward.compute(components.axial.rightFront, components.lateral.rightFront)
+        } else {
+            val feedforward =
                 MotorFeedforward(
                     PARAMS.kS,
                     PARAMS.kV / PARAMS.inPerTick,
                     PARAMS.kA / PARAMS.inPerTick,
-                ),
-                MotorFeedforward(
-                    PARAMS.lateralKS,
-                    PARAMS.lateralKV / PARAMS.inPerTick,
-                    PARAMS.lateralKA / PARAMS.inPerTick,
-                ),
-            )
-            val components = kinematics.inverseComponents(command)
-            leftFrontFF = feedforward.compute(components.axial.leftFront, components.lateral.leftFront)
-            leftBackFF = feedforward.compute(components.axial.leftBack, components.lateral.leftBack)
-            rightBackFF = feedforward.compute(components.axial.rightBack, components.lateral.rightBack)
-            rightFrontFF = feedforward.compute(components.axial.rightFront, components.lateral.rightFront)
-        } else {
-            val feedforward = MotorFeedforward(
-                PARAMS.kS,
-                PARAMS.kV / PARAMS.inPerTick,
-                PARAMS.kA / PARAMS.inPerTick,
-            )
+                )
             leftFrontFF = feedforward.compute(wheelVels.leftFront)
             leftBackFF = feedforward.compute(wheelVels.leftBack)
             rightBackFF = feedforward.compute(wheelVels.rightBack)
@@ -509,12 +510,13 @@ class MecanumDrive private constructor(
         // Yaw-coupling feedforward: a per-wheel voltage that cancels the parasitic yaw from chassis
         // translation. Entries follow wheel order (leftFront, leftBack, rightBack, rightFront).
         // Zero constants (the default) make this a no-op.
-        val yawCoupling = YawCouplingFeedforward(
-            PARAMS.yawCouplingKsAxial,
-            PARAMS.yawCouplingKvAxial,
-            PARAMS.yawCouplingKsLateral,
-            PARAMS.yawCouplingKvLateral,
-        )
+        val yawCoupling =
+            YawCouplingFeedforward(
+                PARAMS.yawCouplingKsAxial,
+                PARAMS.yawCouplingKvAxial,
+                PARAMS.yawCouplingKsLateral,
+                PARAMS.yawCouplingKvLateral,
+            )
         val yawCouplingVoltages = kinematics.yawCouplingVoltages(yawCoupling, command.value())
 
         val leftFrontPower = (leftFrontFF + yawCouplingVoltages[0]) / voltage
@@ -528,7 +530,7 @@ class MecanumDrive private constructor(
                 leftBackPower,
                 rightBackPower,
                 rightFrontPower,
-            ),
+            )
         )
 
         leftFront.power = leftFrontPower
@@ -538,8 +540,7 @@ class MecanumDrive private constructor(
     }
 
     inner class FollowTrajectoryAction(t: TimeTrajectory) : Action {
-        @JvmField
-        val timeTrajectory: TimeTrajectory = t
+        @JvmField val timeTrajectory: TimeTrajectory = t
 
         private var beginTs = -1.0
 
@@ -547,11 +548,12 @@ class MecanumDrive private constructor(
         private val yPoints: DoubleArray
 
         init {
-            val disps = range(
-                0.0,
-                t.path.length(),
-                max(2, ceil(t.path.length() / 2).toInt()),
-            )
+            val disps =
+                range(
+                    0.0,
+                    t.path.length(),
+                    max(2, ceil(t.path.length() / 2).toInt()),
+                )
             xPoints = DoubleArray(disps.size)
             yPoints = DoubleArray(disps.size)
             for (i in disps.indices) {
@@ -584,14 +586,16 @@ class MecanumDrive private constructor(
 
             val robotVelRobot = updatePoseEstimate()
 
-            val command = HolonomicController(
-                PARAMS.axialGain,
-                PARAMS.lateralGain,
-                PARAMS.headingGain,
-                PARAMS.axialVelGain,
-                PARAMS.lateralVelGain,
-                PARAMS.headingVelGain,
-            ).compute(txWorldTarget, localizer.getPose(), robotVelRobot)
+            val command =
+                HolonomicController(
+                        PARAMS.axialGain,
+                        PARAMS.lateralGain,
+                        PARAMS.headingGain,
+                        PARAMS.axialVelGain,
+                        PARAMS.lateralVelGain,
+                        PARAMS.headingVelGain,
+                    )
+                    .compute(txWorldTarget, localizer.getPose(), robotVelRobot)
             driveCommandWriter.write(DriveCommandMessage(command))
 
             setDriveCommand(command)
@@ -655,23 +659,26 @@ class MecanumDrive private constructor(
 
             val robotVelRobot = updatePoseEstimate()
 
-            val command = HolonomicController(
-                PARAMS.axialGain,
-                PARAMS.lateralGain,
-                PARAMS.headingGain,
-                PARAMS.axialVelGain,
-                PARAMS.lateralVelGain,
-                PARAMS.headingVelGain,
-            ).compute(txWorldTarget, localizer.getPose(), robotVelRobot)
+            val command =
+                HolonomicController(
+                        PARAMS.axialGain,
+                        PARAMS.lateralGain,
+                        PARAMS.headingGain,
+                        PARAMS.axialVelGain,
+                        PARAMS.lateralVelGain,
+                        PARAMS.headingVelGain,
+                    )
+                    .compute(txWorldTarget, localizer.getPose(), robotVelRobot)
             driveCommandWriter.write(DriveCommandMessage(command))
 
             val wheelVels = kinematics.inverse(command)
             val voltage = getBatteryVoltage()
-            val feedforward = MotorFeedforward(
-                PARAMS.kS,
-                PARAMS.kV / PARAMS.inPerTick,
-                PARAMS.kA / PARAMS.inPerTick,
-            )
+            val feedforward =
+                MotorFeedforward(
+                    PARAMS.kS,
+                    PARAMS.kV / PARAMS.inPerTick,
+                    PARAMS.kA / PARAMS.inPerTick,
+                )
             val leftFrontPower = feedforward.compute(wheelVels.leftFront) / voltage
             val leftBackPower = feedforward.compute(wheelVels.leftBack) / voltage
             val rightBackPower = feedforward.compute(wheelVels.rightBack) / voltage
@@ -683,7 +690,7 @@ class MecanumDrive private constructor(
                     leftBackPower,
                     rightBackPower,
                     rightFrontPower,
-                ),
+                )
             )
 
             leftFront.power = feedforward.compute(wheelVels.leftFront) / voltage

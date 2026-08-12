@@ -11,22 +11,14 @@ class MecanumLocalizerInputsMessage(
     rightFront: PositionVelocityPair,
     angles: YawPitchRollAngles,
 ) {
-    @JvmField
-    var timestamp: Long = System.nanoTime()
-    @JvmField
-    var leftFront: PositionVelocityPair = leftFront
-    @JvmField
-    var leftBack: PositionVelocityPair = leftBack
-    @JvmField
-    var rightBack: PositionVelocityPair = rightBack
-    @JvmField
-    var rightFront: PositionVelocityPair = rightFront
-    @JvmField
-    var yaw: Double
-    @JvmField
-    var pitch: Double
-    @JvmField
-    var roll: Double
+    @JvmField var timestamp: Long = System.nanoTime()
+    @JvmField var leftFront: PositionVelocityPair = leftFront
+    @JvmField var leftBack: PositionVelocityPair = leftBack
+    @JvmField var rightBack: PositionVelocityPair = rightBack
+    @JvmField var rightFront: PositionVelocityPair = rightFront
+    @JvmField var yaw: Double
+    @JvmField var pitch: Double
+    @JvmField var roll: Double
 
     init {
         this.yaw = angles.getYaw(AngleUnit.RADIANS)

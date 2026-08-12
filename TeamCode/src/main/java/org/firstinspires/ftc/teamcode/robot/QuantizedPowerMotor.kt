@@ -8,8 +8,11 @@ class QuantizedPowerMotor : EncapsulatedDcMotorEx {
     private val quantStep: Double
     private var lastPower = Double.NaN
 
-    constructor(hardwareMap: HardwareMap, deviceName: String, motorPowerChangeTolerance: Double) :
-        super(hardwareMap, deviceName) {
+    constructor(
+        hardwareMap: HardwareMap,
+        deviceName: String,
+        motorPowerChangeTolerance: Double,
+    ) : super(hardwareMap, deviceName) {
         quantStep = motorPowerChangeTolerance
     }
 

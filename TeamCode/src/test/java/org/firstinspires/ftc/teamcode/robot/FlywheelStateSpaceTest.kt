@@ -1,13 +1,13 @@
 package org.firstinspires.ftc.teamcode.robot
 
+import java.util.Random
+import kotlin.math.abs
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.marsroboticsassociation.controllib.control.FlywheelStateSpace
 import org.marsroboticsassociation.controllib.sim.FlywheelMotorSim
-import java.util.Random
-import kotlin.math.abs
 
 class FlywheelStateSpaceTest {
 

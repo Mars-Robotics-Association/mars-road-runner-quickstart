@@ -4,7 +4,8 @@ import com.acmerobotics.roadrunner.Twist2d
 import com.acmerobotics.roadrunner.Vector2d
 
 /**
- * This is a convenience class that exists to make it easier to modify poses in FTC dashboard because the fields are public and mutable
+ * This is a convenience class that exists to make it easier to modify poses in FTC dashboard
+ * because the fields are public and mutable
  */
 class AutoMove(
     @JvmField var dx: Double,

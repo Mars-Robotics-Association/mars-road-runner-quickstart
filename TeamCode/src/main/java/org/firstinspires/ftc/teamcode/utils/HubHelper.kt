@@ -10,9 +10,9 @@ import java.lang.reflect.Method
 class HubHelper {
     companion object {
         /**
-         * Attempt to get the hub module the motor is actually attached to.
-         * Uses reflection to call private LynxDcMotorController.getModule().
-         * Falls back to the first module in hardwareMap if anything goes wrong.
+         * Attempt to get the hub module the motor is actually attached to. Uses reflection to call
+         * private LynxDcMotorController.getModule(). Falls back to the first module in hardwareMap
+         * if anything goes wrong.
          */
         @JvmStatic
         fun getHubForMotor(motor: DcMotorEx, hardwareMap: HardwareMap): LynxModule {
@@ -28,8 +28,7 @@ class HubHelper {
                         try {
                             getModuleMethod = cls.getDeclaredMethod("getModule")
                             break
-                        } catch (_: NoSuchMethodException) {
-                        }
+                        } catch (_: NoSuchMethodException) {}
                         cls = cls.superclass
                     }
                     if (getModuleMethod == null) throw NoSuchMethodException("getModule")

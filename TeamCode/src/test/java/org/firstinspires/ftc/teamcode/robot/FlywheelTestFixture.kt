@@ -1,8 +1,8 @@
 package org.firstinspires.ftc.teamcode.robot
 
+import java.util.Random
 import org.marsroboticsassociation.controllib.control.FlywheelSimple
 import org.marsroboticsassociation.controllib.sim.FlywheelMotorSim
-import java.util.Random
 
 /**
  * Shared simulation infrastructure for flywheel controller unit tests.

@@ -5,14 +5,14 @@ import com.qualcomm.robotcore.hardware.PwmControl
 import com.qualcomm.robotcore.hardware.Servo
 import com.qualcomm.robotcore.hardware.ServoImplEx
 import com.qualcomm.robotcore.util.Range
-import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit
 import kotlin.math.abs
+import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit
 
 /**
  * Wrapper for GoBilda servos that provides angle-based control.
  *
- * <p>This class maps angular positions to servo positions and automatically configures
- * the PWM range based on the servo's angular range (300°, 1800°, or 180°).
+ * <p>This class maps angular positions to servo positions and automatically configures the PWM
+ * range based on the servo's angular range (300°, 1800°, or 180°).
  */
 class GoBildaServo {
 
@@ -30,17 +30,23 @@ class GoBildaServo {
      *
      * <p>Automatically configures PWM range based on the angular range:
      * <ul>
-     *   <li>300° or 1800°: PWM 500-2500</li>
-     *   <li>180°: PWM 600-2400</li>
+     * <li>300° or 1800°: PWM 500-2500</li>
+     * <li>180°: PWM 600-2400</li>
      * </ul>
      *
-     * @param hw        The hardware map.
+     * @param hw The hardware map.
      * @param servoName The name of the servo in the hardware configuration.
-     * @param minAngle  The minimum angle of the servo's range.
-     * @param maxAngle  The maximum angle of the servo's range.
+     * @param minAngle The minimum angle of the servo's range.
+     * @param maxAngle The maximum angle of the servo's range.
      * @param angleUnit The unit for minAngle and maxAngle.
      */
-    constructor(hw: HardwareMap, servoName: String, minAngle: Double, maxAngle: Double, angleUnit: AngleUnit) {
+    constructor(
+        hw: HardwareMap,
+        servoName: String,
+        minAngle: Double,
+        maxAngle: Double,
+        angleUnit: AngleUnit,
+    ) {
         servo = hw.get(ServoImplEx::class.java, servoName)
 
         val range = abs(Math.round(fromRadians(maxAngle - minAngle, angleUnit)))
@@ -58,18 +64,22 @@ class GoBildaServo {
     /**
      * Constructs a GoBildaServo with the specified angular range in degrees.
      *
-     * @param hw        The hardware map.
+     * @param hw The hardware map.
      * @param servoName The name of the servo in the hardware configuration.
      * @param minDegree The minimum angle in degrees.
      * @param maxDegree The maximum angle in degrees.
      */
-    constructor(hw: HardwareMap, servoName: String, minDegree: Double, maxDegree: Double) :
-        this(hw, servoName, minDegree, maxDegree, AngleUnit.DEGREES)
+    constructor(
+        hw: HardwareMap,
+        servoName: String,
+        minDegree: Double,
+        maxDegree: Double,
+    ) : this(hw, servoName, minDegree, maxDegree, AngleUnit.DEGREES)
 
     /**
      * Rotates the servo by a relative angle from its current position.
      *
-     * @param angle     The angle to rotate by.
+     * @param angle The angle to rotate by.
      * @param angleUnit The unit for the angle.
      */
     fun rotateByAngle(angle: Double, angleUnit: AngleUnit) {
@@ -89,7 +99,7 @@ class GoBildaServo {
     /**
      * Turns the servo to an absolute angle.
      *
-     * @param angle     The target angle (clamped to the servo's configured range).
+     * @param angle The target angle (clamped to the servo's configured range).
      * @param angleUnit The unit for the angle.
      */
     fun turnToAngle(angle: Double, angleUnit: AngleUnit) {
@@ -133,8 +143,8 @@ class GoBildaServo {
     /**
      * Updates the servo's angular range mapping.
      *
-     * @param min       The new minimum angle.
-     * @param max       The new maximum angle.
+     * @param min The new minimum angle.
+     * @param max The new maximum angle.
      * @param angleUnit The unit for the angles.
      */
     fun setRange(min: Double, max: Double, angleUnit: AngleUnit) {

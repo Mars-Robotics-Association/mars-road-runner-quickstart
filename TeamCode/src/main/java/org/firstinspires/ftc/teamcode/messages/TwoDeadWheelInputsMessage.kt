@@ -11,24 +11,15 @@ class TwoDeadWheelInputsMessage(
     angles: YawPitchRollAngles,
     angularVelocity: AngularVelocity,
 ) {
-    @JvmField
-    var timestamp: Long = System.nanoTime()
-    @JvmField
-    var par: PositionVelocityPair = par
-    @JvmField
-    var perp: PositionVelocityPair = perp
-    @JvmField
-    var yaw: Double
-    @JvmField
-    var pitch: Double
-    @JvmField
-    var roll: Double
-    @JvmField
-    var xRotationRate: Double
-    @JvmField
-    var yRotationRate: Double
-    @JvmField
-    var zRotationRate: Double
+    @JvmField var timestamp: Long = System.nanoTime()
+    @JvmField var par: PositionVelocityPair = par
+    @JvmField var perp: PositionVelocityPair = perp
+    @JvmField var yaw: Double
+    @JvmField var pitch: Double
+    @JvmField var roll: Double
+    @JvmField var xRotationRate: Double
+    @JvmField var yRotationRate: Double
+    @JvmField var zRotationRate: Double
 
     init {
         this.yaw = angles.getYaw(AngleUnit.RADIANS)

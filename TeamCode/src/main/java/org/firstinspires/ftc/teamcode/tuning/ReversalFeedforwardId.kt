@@ -1,15 +1,15 @@
 package org.firstinspires.ftc.teamcode.tuning
 
 import com.qualcomm.robotcore.util.ElapsedTime
-import org.firstinspires.ftc.robotcore.external.Telemetry
-import org.firstinspires.ftc.teamcode.opmodes.base.MarsLinearOpMode
-import org.firstinspires.ftc.teamcode.utils.CsvLogger
 import java.util.function.DoubleConsumer
 import java.util.function.DoubleSupplier
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.sign
+import org.firstinspires.ftc.robotcore.external.Telemetry
+import org.firstinspires.ftc.teamcode.opmodes.base.MarsLinearOpMode
+import org.firstinspires.ftc.teamcode.utils.CsvLogger
 
 /**
  * Shared core for the feedforward tuners ([AxialFeedforwardTuner], [LateralFeedforwardTuner]).
@@ -17,22 +17,22 @@ import kotlin.math.sign
  * **Two maneuvers, two jobs.**
  *
  * 1. **Slow open-loop ramp** (same idea as `ForwardRampLogger`) — visits many speeds so `kS` and
- *    `kV` separate cleanly via `V = kS + kV·v`. High-speed-only cruise levels pin `kV` well but leave
- *    the intercept (`kS`) poorly leveraged: a few percent slope error shifts `kS` by tenths of a
- *    volt. Ends early if speed collapses under power (wall / hard stop) so the robot does not keep
- *    driving into an obstacle.
- * 2. **Reverse square wave** — first half-cycle is reverse (away from a forward wall). When the ramp
- *    measured a useful travel distance (e.g. start → wall), each half-cycle runs for that corridor
- *    rather than a fixed 1 s, so the kA phase uses the room the robot just proved is free. Then with
- *    `kS`/`kV` fixed, fit residual `∫(V − kS·sign(v) − kV·v) dt = kA·Δv` over short windows (no noisy
- *    `a = dv/dt`).
+ *    `kV` separate cleanly via `V = kS + kV·v`. High-speed-only cruise levels pin `kV` well but
+ *    leave the intercept (`kS`) poorly leveraged: a few percent slope error shifts `kS` by tenths
+ *    of a volt. Ends early if speed collapses under power (wall / hard stop) so the robot does not
+ *    keep driving into an obstacle.
+ * 2. **Reverse square wave** — first half-cycle is reverse (away from a forward wall). When the
+ *    ramp measured a useful travel distance (e.g. start → wall), each half-cycle runs for that
+ *    corridor rather than a fixed 1 s, so the kA phase uses the room the robot just proved is free.
+ *    Then with `kS`/`kV` fixed, fit residual `∫(V − kS·sign(v) − kV·v) dt = kA·Δv` over short
+ *    windows (no noisy `a = dv/dt`).
  *
  * Velocity is chassis axis speed in in/s from the localizer; axis position is inches along the same
  * axis. `power` and velocity must share a sign convention.
  *
- * Optional [CsvLogger] sample logging (header [SAMPLE_HEADER]): raw control-loop measurements during
- * ramp and reverse so the id can be re-run offline. Callers open/close the logger and write a
- * one-row meta file with run config ([META_HEADER]) — not fitted constants (those are recomputed
+ * Optional [CsvLogger] sample logging (header [SAMPLE_HEADER]): raw control-loop measurements
+ * during ramp and reverse so the id can be re-run offline. Callers open/close the logger and write
+ * a one-row meta file with run config ([META_HEADER]) — not fitted constants (those are recomputed
  * from samples).
  */
 class ReversalFeedforwardId private constructor() {
@@ -87,8 +87,7 @@ class ReversalFeedforwardId private constructor() {
          * `pose_in` is the localizer axis reading when available (NaN otherwise) — not the
          * integrated ∫vel used for corridor logic.
          */
-        @JvmField
-        val SAMPLE_HEADER = "t_s,phase,half_idx,power,battery_v,vel_in_s,pose_in"
+        @JvmField val SAMPLE_HEADER = "t_s,phase,half_idx,power,battery_v,vel_in_s,pose_in"
 
         /**
          * One-row run config for offline re-fit (plant scale + OpMode knobs). Not fit results —
@@ -102,49 +101,42 @@ class ReversalFeedforwardId private constructor() {
                 "ka_window_s,ka_stride_s"
 
         /** Flush buffered sample rows after this many are queued. */
-        @JvmField
-        val LOG_FLUSH_EVERY = 256
+        @JvmField val LOG_FLUSH_EVERY = 256
 
         /** Window length (s) for residual kA integral equations. */
-        @JvmField
-        val DEFAULT_KA_WINDOW = 0.12
+        @JvmField val DEFAULT_KA_WINDOW = 0.12
 
         /** Stride (s) between kA windows. */
-        @JvmField
-        val DEFAULT_KA_STRIDE = 0.04
+        @JvmField val DEFAULT_KA_STRIDE = 0.04
 
         /** Seconds held at ramp peak before the reverse phase. */
-        @JvmField
-        val DEFAULT_RAMP_HOLD = 0.4
+        @JvmField val DEFAULT_RAMP_HOLD = 0.4
 
         /**
          * Absolute speed (in/s) below which a moving robot is treated as stalled against an
          * obstacle. Combined with [DEFAULT_STALL_FRAC] of peak speed (whichever is larger).
          */
-        @JvmField
-        val DEFAULT_STALL_SPEED = 2.0
+        @JvmField val DEFAULT_STALL_SPEED = 2.0
 
         /** How long (s) velocity must stay collapsed before the ramp ends for a wall/stall. */
-        @JvmField
-        val DEFAULT_STALL_TIME = 0.15
+        @JvmField val DEFAULT_STALL_TIME = 0.15
 
         /**
          * Speed (in/s) the robot must have exceeded at least once before stall detection arms —
          * avoids ending the ramp during breakaway from rest.
          */
-        @JvmField
-        val DEFAULT_MOVING_SPEED = 5.0
+        @JvmField val DEFAULT_MOVING_SPEED = 5.0
 
-        /** Commanded |power| must be at least this to count as stalled (ignore near-zero commands). */
-        @JvmField
-        val DEFAULT_STALL_MIN_POWER = 0.15
+        /**
+         * Commanded |power| must be at least this to count as stalled (ignore near-zero commands).
+         */
+        @JvmField val DEFAULT_STALL_MIN_POWER = 0.15
 
         /**
          * Velocity below this fraction of the ramp's peak speed also counts as collapsed (catches
          * wall hits where the robot still creeps a little).
          */
-        @JvmField
-        val DEFAULT_STALL_FRAC = 0.25
+        @JvmField val DEFAULT_STALL_FRAC = 0.25
 
         /**
          * Ramp samples slower than this many encoder-tick units per second are excluded from the
@@ -152,36 +144,31 @@ class ReversalFeedforwardId private constructor() {
          * non-linear breakaway knee at the start of a forward ramp (~vertical cluster near v=0 on
          * the V-vs-v plot).
          */
-        @JvmField
-        val DEFAULT_MIN_RAMP_TICKS_PER_SEC = 1000.0
+        @JvmField val DEFAULT_MIN_RAMP_TICKS_PER_SEC = 1000.0
 
         /**
          * Keep this many inches clear of each end of the measured ramp corridor during the
          * position-based reverse phase (so half-cycles don't grind the wall or start edge).
          */
-        @JvmField
-        val DEFAULT_END_MARGIN_IN = 6.0
+        @JvmField val DEFAULT_END_MARGIN_IN = 6.0
 
         /**
          * Minimum |ramp travel| (in) before the reverse phase switches from fixed-time half-cycles
          * to position-based half-cycles that use the full corridor.
          */
-        @JvmField
-        val DEFAULT_MIN_TRAVEL_IN = 18.0
+        @JvmField val DEFAULT_MIN_TRAVEL_IN = 18.0
 
         /**
          * |Travel| (in) from ramp start that arms stall detection even if peak speed never reached
          * [DEFAULT_MOVING_SPEED]. Important for slow lateral ramps that hit a wall early.
          */
-        @JvmField
-        val DEFAULT_ARM_TRAVEL_IN = 4.0
+        @JvmField val DEFAULT_ARM_TRAVEL_IN = 4.0
 
         /**
          * When stall is armed, |d(position)/dt| below this (in/s) under power counts as stalled —
          * catches wall contact when velocity is noisy or wheels keep slipping a little.
          */
-        @JvmField
-        val DEFAULT_POS_STALL_SPEED = 1.5
+        @JvmField val DEFAULT_POS_STALL_SPEED = 1.5
 
         /**
          * Run a slow ramp (kS/kV) then a reverse square wave (kA).
@@ -194,7 +181,7 @@ class ReversalFeedforwardId private constructor() {
          * @param wheelVel axis velocity (in/s); should update the localizer when read
          * @param axisPos axis position (in) along the same axis; read after `wheelVel`
          * @param halfCycle fallback seconds per reverse direction when travel is too short for
-         *     position-based half-cycles
+         *   position-based half-cycles
          */
         @JvmStatic
         fun identify(
@@ -300,8 +287,8 @@ class ReversalFeedforwardId private constructor() {
 
         /**
          * @param sampleLog optional per-loop sample logger ([SAMPLE_HEADER]); null skips CSV rows.
-         *     Caller owns open/close and the meta file; this only appends raw sample rows and
-         *     flushes periodically.
+         *   Caller owns open/close and the meta file; this only appends raw sample rows and flushes
+         *   periodically.
          */
         @JvmStatic
         fun identify(
@@ -350,7 +337,8 @@ class ReversalFeedforwardId private constructor() {
             // Ends on schedule, on gamepad1 A (manual — hit before the mat/wall trap), or if
             // motion collapses under power (automatic wall/hard-stop detect).
             //
-            // Position for stall + corridor is ∫vel dt along the test axis — same signal as the fit.
+            // Position for stall + corridor is ∫vel dt along the test axis — same signal as the
+            // fit.
             // World pose (axisPos) is only for telemetry: on lateral strafes, heading error makes
             // field-y a bad stand-in for robot-lateral travel and was skipping reverse half-cycles.
             var everMoving = false
@@ -463,7 +451,8 @@ class ReversalFeedforwardId private constructor() {
                 }
             }
 
-            // Brief coast so reverse does not inherit a wall-pressed stall state; keep ∫vel continuous.
+            // Brief coast so reverse does not inherit a wall-pressed stall state; keep ∫vel
+            // continuous.
             setPower.accept(0.0)
             run {
                 val coast = ElapsedTime()
@@ -505,7 +494,7 @@ class ReversalFeedforwardId private constructor() {
                         abs(travel),
                         endMarginIn,
                         halfCycles,
-                    ),
+                    )
                 )
             } else {
                 telemetry.addLine(
@@ -514,7 +503,7 @@ class ReversalFeedforwardId private constructor() {
                         halfCycle,
                         halfCycles,
                         abs(travel),
-                    ),
+                    )
                 )
             }
 
@@ -682,7 +671,16 @@ class ReversalFeedforwardId private constructor() {
                 revT.add(t)
                 revV.add(appliedV)
                 revVel.add(vel)
-                logSample(sampleLog, t, "reverse", halfIdx, power, batteryV, vel, readPoseIn(axisPos))
+                logSample(
+                    sampleLog,
+                    t,
+                    "reverse",
+                    halfIdx,
+                    power,
+                    batteryV,
+                    vel,
+                    readPoseIn(axisPos),
+                )
                 maybeFlush(sampleLog)
 
                 telemetry.addData("phase", "reverse %d / %d (timed)", halfIdx + 1, halfCycles)
@@ -695,8 +693,8 @@ class ReversalFeedforwardId private constructor() {
 
         /**
          * @param sBox single-element box holding live ∫vel position (updated in-place)
-         * @param minHalfSec minimum duration of each half-cycle so kA always gets real reversals even
-         *     if a position target is already satisfied (or stalls early)
+         * @param minHalfSec minimum duration of each half-cycle so kA always gets real reversals
+         *   even if a position target is already satisfied (or stalls early)
          */
         private fun runPositionReversePhase(
             opMode: MarsLinearOpMode,
@@ -783,7 +781,8 @@ class ReversalFeedforwardId private constructor() {
                             (pos - halfStartS) * corridor.travelSign // motion toward end
                         }
                     val atTarget =
-                        if (reverse) reverseReached(pos, corridor) else forwardReached(pos, corridor)
+                        if (reverse) reverseReached(pos, corridor)
+                        else forwardReached(pos, corridor)
                     val minTimeOk = halfTimer.seconds() >= minHalf
                     if (atTarget && minTimeOk) {
                         break
@@ -953,7 +952,7 @@ class ReversalFeedforwardId private constructor() {
 
         /**
          * @param minRampTicksPerSec ramp samples slower than this (tick units/s × `inPerTick` →
-         *     in/s) are excluded from the kS/kV fit
+         *   in/s) are excluded from the kS/kV fit
          */
         @JvmStatic
         fun fitRampAndReverse(
@@ -1042,7 +1041,7 @@ class ReversalFeedforwardId private constructor() {
 
         /**
          * @param timeSec optional sample times for finite-difference accel; improves kS residual
-         *     pick
+         *   pick
          */
         @JvmStatic
         fun fitRamp(

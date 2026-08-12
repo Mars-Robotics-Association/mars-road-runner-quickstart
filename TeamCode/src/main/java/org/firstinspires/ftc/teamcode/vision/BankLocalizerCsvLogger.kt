@@ -1,25 +1,25 @@
 package org.firstinspires.ftc.teamcode.vision
 
 import com.acmerobotics.roadrunner.Pose2d
+import java.util.LinkedHashMap
 import org.firstinspires.ftc.teamcode.utils.CsvLogger
 import org.marsroboticsassociation.controllib.localization.vision.HypothesisBankLocalizer
 import org.marsroboticsassociation.controllib.localization.vision.PoseHypothesisBank
 import org.marsroboticsassociation.controllib.localization.vision.VisionFrame
 import org.marsroboticsassociation.controllib.localization.vision.VisionFrameCsv
 import org.marsroboticsassociation.controllib.localization.vision.VisionSource
-import java.util.LinkedHashMap
 
 /**
  * Full-loop-rate CSV logger for the multi-hypothesis bank localizer, factored out of the demo
- * opmode so any opmode running a [HypothesisBankRoadRunnerLocalizer] can drop in the same
- * log. It writes the **replay schema**: enough per-loop raw input to re-run the whole
- * PnP → solver → bank chain off-robot (see `BankReplay` + `CsvVisionSource` in ControlLib's
- * tests) and, from the logged corners + intrinsics, to re-solve the PnP with a different method.
- * Buffered and flushed in bursts (see [CsvLogger]) so disk I/O never stalls the control loop.
+ * opmode so any opmode running a [HypothesisBankRoadRunnerLocalizer] can drop in the same log. It
+ * writes the **replay schema**: enough per-loop raw input to re-run the whole PnP → solver → bank
+ * chain off-robot (see `BankReplay` + `CsvVisionSource` in ControlLib's tests) and, from the logged
+ * corners + intrinsics, to re-solve the PnP with a different method. Buffered and flushed in bursts
+ * (see [CsvLogger]) so disk I/O never stalls the control loop.
  *
  * Each row is three blocks: the logger's own **odometry + timing + motion** columns, the
- * [VisionFrameCsv] **frame block** (the raw vision inputs — the reconstruction contract shared
- * with the replay source), and the **outputs** (fused pose + bank state) for comparison. It is a
+ * [VisionFrameCsv] **frame block** (the raw vision inputs — the reconstruction contract shared with
+ * the replay source), and the **outputs** (fused pose + bank state) for comparison. It is a
  * deliberately trimmed subset of the source project's schema: it drops the EKF/gating, MT2, IMU,
  * and label columns, but keeps every raw input the chain — or a re-solve — consumes.
  */
@@ -62,8 +62,7 @@ class BankLocalizerCsvLogger(filePrefix: String) : AutoCloseable {
         // flag: valid AND a new camera timestamp this loop, so replay dedups exactly as the robot
         // does (a valid-but-cached frame is logged as not-new and the replay skips re-processing
         // it).
-        val fm: LinkedHashMap<String, Double> =
-            VisionFrameCsv.toMap(frame, cam, src.calDistCoeffs)
+        val fm: LinkedHashMap<String, Double> = VisionFrameCsv.toMap(frame, cam, src.calDistCoeffs)
         val fresh = frame.valid && frame.timestamp != prevFrameTs
         fm["vis_newFrame"] = if (fresh) 1.0 else 0.0
         if (frame.valid) {
@@ -121,9 +120,10 @@ class BankLocalizerCsvLogger(filePrefix: String) : AutoCloseable {
             "fused_x,fused_y,fused_headingDeg," +
                 "committed,dom_weight,bank_size,bank_residPosIn,bank_residHeadDeg,span_px"
 
-        /** The CSV schema: odometry/timing/motion, the raw frame block, then the fused/bank outputs. */
-        @JvmField
-        val HEADER: String = LEAD + "," + VisionFrameCsv.HEADER + "," + TAIL
+        /**
+         * The CSV schema: odometry/timing/motion, the raw frame block, then the fused/bank outputs.
+         */
+        @JvmField val HEADER: String = LEAD + "," + VisionFrameCsv.HEADER + "," + TAIL
 
         /** Rows past this buffered count trigger a flush, amortizing disk I/O across the loop. */
         private const val FLUSH_THRESHOLD = 256

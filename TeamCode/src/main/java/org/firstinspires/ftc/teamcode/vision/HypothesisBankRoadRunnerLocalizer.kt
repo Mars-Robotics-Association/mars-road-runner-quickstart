@@ -3,6 +3,7 @@ package org.firstinspires.ftc.teamcode.vision
 import com.acmerobotics.dashboard.config.Config
 import com.acmerobotics.roadrunner.PoseVelocity2d
 import edu.wpi.first.math.geometry.Rotation2d
+import java.util.function.LongSupplier
 import org.firstinspires.ftc.robotcore.external.Telemetry
 import org.firstinspires.ftc.teamcode.Localizer
 import org.marsroboticsassociation.controllib.localization.vision.HypothesisBankLocalizer
@@ -10,7 +11,6 @@ import org.marsroboticsassociation.controllib.localization.vision.Transform3D
 import org.marsroboticsassociation.controllib.localization.vision.VisionPoseSolver
 import org.marsroboticsassociation.controllib.localization.vision.VisionPoseSolverConfig
 import org.marsroboticsassociation.controllib.localization.vision.VisionSource
-import java.util.function.LongSupplier
 
 /**
  * Road Runner [Localizer] adapter around the library's pure [HypothesisBankLocalizer]. This is the
@@ -29,51 +29,45 @@ import java.util.function.LongSupplier
  */
 class HypothesisBankRoadRunnerLocalizer : Localizer {
 
-    /** FtcDashboard-tunable configuration (live for core/tag; extrinsics applied at construction). */
+    /**
+     * FtcDashboard-tunable configuration (live for core/tag; extrinsics applied at construction).
+     */
     @Config
     class Params {
         /** The pure library core's tuning (bank + commit + latency + blur gate). */
-        @JvmField
-        var core: HypothesisBankLocalizer.Params = HypothesisBankLocalizer.Params()
+        @JvmField var core: HypothesisBankLocalizer.Params = HypothesisBankLocalizer.Params()
 
         /** AprilTag black-square side length (metres) for the ambiguity PnP re-solve. */
-        @JvmField
-        var tagSizeMeters: Double = 0.1651
+        @JvmField var tagSizeMeters: Double = 0.1651
 
         /**
          * Minimum tag image area (percent of frame) for a tag to qualify as the ambiguity anchor; 0
          * disables the area filter (any tag qualifies).
          */
-        @JvmField
-        var ambiguityMinTagAreaPct: Double = 0.0
+        @JvmField var ambiguityMinTagAreaPct: Double = 0.0
 
         // --- camera extrinsic (Limelight .vpr "camera pose in robot space", per-robot) ----------
         // Match this robot's Limelight config (or a hand-eye solve). Units: metres / degrees.
-        // Defaults below are one known good mount (Curiosity DECODE); replace for every other robot.
+        // Defaults below are one known good mount (Curiosity DECODE); replace for every other
+        // robot.
 
         /** Camera forward of robot origin (m). Limelight `rsforward`. */
-        @JvmField
-        var cameraForwardM: Double = 0.0816
+        @JvmField var cameraForwardM: Double = 0.0816
 
         /** Camera left of robot origin (m); right is negative. Limelight `rsside`. */
-        @JvmField
-        var cameraSideM: Double = -0.0400
+        @JvmField var cameraSideM: Double = -0.0400
 
         /** Camera height above floor / robot origin (m). Limelight `rsup`. */
-        @JvmField
-        var cameraUpM: Double = 0.3835
+        @JvmField var cameraUpM: Double = 0.3835
 
         /** Camera roll (deg). 180 = mounted upside-down. Limelight `rsroll`. */
-        @JvmField
-        var cameraRollDeg: Double = 180.0
+        @JvmField var cameraRollDeg: Double = 180.0
 
         /** Camera pitch (deg); positive = nose up. Limelight `rspitch`. */
-        @JvmField
-        var cameraPitchDeg: Double = 0.23
+        @JvmField var cameraPitchDeg: Double = 0.23
 
         /** Camera yaw (deg); positive = left. Limelight `rsyaw`. */
-        @JvmField
-        var cameraYawDeg: Double = -0.78
+        @JvmField var cameraYawDeg: Double = -0.78
     }
 
     private val odometry: Localizer
@@ -87,7 +81,7 @@ class HypothesisBankRoadRunnerLocalizer : Localizer {
      * [System.nanoTime] clock.
      *
      * @param odometry the odometry localizer (the rigid backbone; its raw pose need not be
-     *     field-aligned — the bank maps it to the field)
+     *   field-aligned — the bank maps it to the field)
      * @param source the vision-acquisition source (e.g. [LimelightVisionSource])
      * @param startPose the starting field pose to seed (Road Runner)
      * @param telemetry for status logging; may be null
@@ -97,7 +91,14 @@ class HypothesisBankRoadRunnerLocalizer : Localizer {
         source: VisionSource,
         startPose: com.acmerobotics.roadrunner.Pose2d,
         telemetry: Telemetry?,
-    ) : this(odometry, source, solverFromParams(PARAMS), startPose, telemetry, LongSupplier { System.nanoTime() })
+    ) : this(
+        odometry,
+        source,
+        solverFromParams(PARAMS),
+        startPose,
+        telemetry,
+        LongSupplier { System.nanoTime() },
+    )
 
     constructor(
         odometry: Localizer,
@@ -163,8 +164,7 @@ class HypothesisBankRoadRunnerLocalizer : Localizer {
     fun visionSource(): VisionSource = source
 
     companion object {
-        @JvmField
-        var PARAMS: Params = Params()
+        @JvmField var PARAMS: Params = Params()
 
         /**
          * Builds a [VisionPoseSolver] from this robot's [Params] camera extrinsics and this
@@ -181,10 +181,13 @@ class HypothesisBankRoadRunnerLocalizer : Localizer {
                     p.cameraPitchDeg,
                     p.cameraYawDeg,
                 )
-            return VisionPoseSolverConfig(robotFromCamera, FieldTagMap.decode2025GoalTags()).solver()
+            return VisionPoseSolverConfig(robotFromCamera, FieldTagMap.decode2025GoalTags())
+                .solver()
         }
 
-        private fun toWpi(p: com.acmerobotics.roadrunner.Pose2d): edu.wpi.first.math.geometry.Pose2d {
+        private fun toWpi(
+            p: com.acmerobotics.roadrunner.Pose2d
+        ): edu.wpi.first.math.geometry.Pose2d {
             return edu.wpi.first.math.geometry.Pose2d(
                 p.position.x,
                 p.position.y,
@@ -192,7 +195,9 @@ class HypothesisBankRoadRunnerLocalizer : Localizer {
             )
         }
 
-        private fun toRr(p: edu.wpi.first.math.geometry.Pose2d): com.acmerobotics.roadrunner.Pose2d {
+        private fun toRr(
+            p: edu.wpi.first.math.geometry.Pose2d
+        ): com.acmerobotics.roadrunner.Pose2d {
             return com.acmerobotics.roadrunner.Pose2d(
                 p.x,
                 p.y,

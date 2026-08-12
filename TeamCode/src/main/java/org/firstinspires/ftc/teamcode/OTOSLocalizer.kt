@@ -26,18 +26,17 @@ class OTOSLocalizer(
     }
 
     companion object {
-        @JvmField
-        var PARAMS = Params()
+        @JvmField var PARAMS = Params()
     }
 
-    @JvmField
-    val otos: SparkFunOTOS
+    @JvmField val otos: SparkFunOTOS
 
     private var currentPose: Pose2d
 
     init {
         // TODO: make sure your config has an OTOS device with this name
-        //   see https://ftc-docs.firstinspires.org/en/latest/hardware_and_software_configuration/configuring/index.html
+        //   see
+        // https://ftc-docs.firstinspires.org/en/latest/hardware_and_software_configuration/configuring/index.html
         otos = hardwareMap.get(SparkFunOTOS::class.java, "sensor_otos")
         currentPose = initialPose
         otos.setPosition(currentPose.toOTOSPose())

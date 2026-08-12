@@ -40,8 +40,7 @@ open class EncapsulatedDcMotorEx : DcMotorEx, IMotor {
     }
 
     private fun requireMotor(): DcMotorEx {
-        return motor
-            ?: throw UnsupportedOperationException("motor not available on this stub")
+        return motor ?: throw UnsupportedOperationException("motor not available on this stub")
     }
 
     override fun getName(): String {
@@ -58,10 +57,11 @@ open class EncapsulatedDcMotorEx : DcMotorEx, IMotor {
     }
 
     override fun getHubVoltage(): Double {
-        val hub = this.hub
-            ?: throw UnsupportedOperationException(
-                "getHubVoltage() requires construction from HardwareMap",
-            )
+        val hub =
+            this.hub
+                ?: throw UnsupportedOperationException(
+                    "getHubVoltage() requires construction from HardwareMap"
+                )
         return hub.getInputVoltage(VoltageUnit.VOLTS)
     }
 
@@ -165,8 +165,8 @@ open class EncapsulatedDcMotorEx : DcMotorEx, IMotor {
      * Readers are reminded that [DcMotor.RunMode.RUN_TO_POSITION] mode makes use of *both* the
      * coefficients set for RUN_TO_POSITION *and* the coefficients set for RUN_WITH_ENCODER, due to
      * the fact that internally the RUN_TO_POSITION logic calculates an on-the-fly velocity goal on
-     * each control cycle, then (logically) runs the RUN_WITH_ENCODER logic. Because of that
-     * double- layering, only the proportional ('p') coefficient makes logical sense for use in the
+     * each control cycle, then (logically) runs the RUN_WITH_ENCODER logic. Because of that double-
+     * layering, only the proportional ('p') coefficient makes logical sense for use in the
      * RUN_TO_POSITION coefficients.
      *
      * @see #setVelocityPIDFCoefficients(double, double, double, double)
@@ -188,14 +188,14 @@ open class EncapsulatedDcMotorEx : DcMotorEx, IMotor {
     }
 
     /**
-     * A shorthand for setting the PIDF coefficients for the [DcMotor.RunMode.RUN_TO_POSITION]
-     * mode. [com.qualcomm.robotcore.hardware.MotorControlAlgorithm.PIDF] is used.
+     * A shorthand for setting the PIDF coefficients for the [DcMotor.RunMode.RUN_TO_POSITION] mode.
+     * [com.qualcomm.robotcore.hardware.MotorControlAlgorithm.PIDF] is used.
      *
      * Readers are reminded that [DcMotor.RunMode.RUN_TO_POSITION] mode makes use of *both* the
      * coefficients set for RUN_TO_POSITION *and* the coefficients set for RUN_WITH_ENCODER, due to
      * the fact that internally the RUN_TO_POSITION logic calculates an on-the-fly velocity goal on
-     * each control cycle, then (logically) runs the RUN_WITH_ENCODER logic. Because of that
-     * double- layering, only the proportional ('p') coefficient makes logical sense for use in the
+     * each control cycle, then (logically) runs the RUN_WITH_ENCODER logic. Because of that double-
+     * layering, only the proportional ('p') coefficient makes logical sense for use in the
      * RUN_TO_POSITION coefficients.
      *
      * @see #setVelocityPIDFCoefficients(double, double, double, double)
@@ -361,7 +361,7 @@ open class EncapsulatedDcMotorEx : DcMotorEx, IMotor {
      * @see #setZeroPowerBehavior(ZeroPowerBehavior)
      */
     @Deprecated(
-        "This method is deprecated in favor of direct use of setZeroPowerBehavior() and setPower().",
+        "This method is deprecated in favor of direct use of setZeroPowerBehavior() and setPower()."
     )
     override fun setPowerFloat() {
         requireMotor().setPowerFloat()
@@ -381,8 +381,8 @@ open class EncapsulatedDcMotorEx : DcMotorEx, IMotor {
      * Sets the desired encoder target position to which the motor should advance or retreat and
      * then actively hold thereat. This behavior is similar to the operation of a servo. The maximum
      * speed at which this advance or retreat occurs is governed by the power level currently set on
-     * the requireMotor(). While the motor is advancing or retreating to the desired target position,
-     * [isBusy] will return true.
+     * the requireMotor(). While the motor is advancing or retreating to the desired target
+     * position, [isBusy] will return true.
      *
      * Note that adjustment to a target position is only effective when the motor is in
      * [RunMode.RUN_TO_POSITION] RunMode. Note further that, clearly, the motor must be equipped

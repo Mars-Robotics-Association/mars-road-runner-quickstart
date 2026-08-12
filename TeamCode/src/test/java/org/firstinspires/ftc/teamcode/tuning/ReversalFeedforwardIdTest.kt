@@ -1,12 +1,12 @@
 package org.firstinspires.ftc.teamcode.tuning
 
+import kotlin.math.abs
+import kotlin.math.round
+import kotlin.math.sign
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
-import kotlin.math.abs
-import kotlin.math.round
-import kotlin.math.sign
 
 /** Simulated-plant checks for the ramp (kS/kV) + reverse (kA) identifier. */
 class ReversalFeedforwardIdTest {
