@@ -1,13 +1,13 @@
 package org.firstinspires.ftc.teamcode.tuning;
 
 import com.acmerobotics.dashboard.config.Config;
-import com.acmerobotics.dashboard.telemetry.MultipleTelemetry;
 import com.acmerobotics.roadrunner.Pose2d;
 import com.acmerobotics.roadrunner.PoseVelocity2d;
 import com.qualcomm.robotcore.hardware.DcMotorEx;
 import com.qualcomm.robotcore.hardware.IMU;
 import com.qualcomm.robotcore.util.ElapsedTime;
 
+import org.firstinspires.ftc.robotcore.external.Telemetry;
 import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
 import org.firstinspires.ftc.robotcore.external.navigation.AngularVelocity;
 import org.firstinspires.ftc.robotcore.external.navigation.UnnormalizedAngleUnit;
@@ -110,11 +110,14 @@ public final class YawCouplingTuner extends MarsLinearOpMode {
     @Override
     public void runOpMode() throws InterruptedException {
         initRobot();
-        MultipleTelemetry telem = (MultipleTelemetry) telemetry;
+        // MarsLinearOpMode already wraps DS + Dashboard in GatedTelemetry — use Telemetry, do not
+        // cast to MultipleTelemetry.
+        Telemetry telem = telemetry;
 
         if (TuningOpModes.DRIVE_CLASS.equals(MecanumDrive.class)) {
             MecanumDrive drive =
-                    new MecanumDrive(hardwareMap, new Pose2d(0, 0, 0), this::batteryVoltage);
+                    MecanumDrive.forMarsLinear(
+                            hardwareMap, new Pose2d(0, 0, 0), this::batteryVoltage);
             double kVWheel = MecanumDrive.PARAMS.kV / MecanumDrive.PARAMS.inPerTick;
             double trackWidth = drive.kinematics.trackWidth;
             requireCalibrated(kVWheel, trackWidth);
@@ -199,7 +202,8 @@ public final class YawCouplingTuner extends MarsLinearOpMode {
                 }
             }
         } else if (TuningOpModes.DRIVE_CLASS.equals(TankDrive.class)) {
-            TankDrive drive = new TankDrive(hardwareMap, new Pose2d(0, 0, 0), this::batteryVoltage);
+            TankDrive drive =
+                    TankDrive.forMarsLinear(hardwareMap, new Pose2d(0, 0, 0), this::batteryVoltage);
             double kVWheel = TankDrive.PARAMS.kV / TankDrive.PARAMS.inPerTick;
             double trackWidth = drive.kinematics.trackWidth;
             requireCalibrated(kVWheel, trackWidth);
@@ -394,10 +398,7 @@ public final class YawCouplingTuner extends MarsLinearOpMode {
     }
 
     private static void addFitTelemetry(
-            MultipleTelemetry telemetry,
-            String label,
-            TunerRegression.Result fit,
-            RampResult ramp) {
+            Telemetry telemetry, String label, TunerRegression.Result fit, RampResult ramp) {
         telemetry.addData(
                 label + " fit",
                 "R^2 %.3f  a=%.4f  b=%.5f  (%d pts)",
@@ -421,7 +422,7 @@ public final class YawCouplingTuner extends MarsLinearOpMode {
             MecanumDrive drive,
             DoubleSupplier yawRate,
             boolean forward,
-            MultipleTelemetry telemetry,
+            Telemetry telemetry,
             String label) {
         List<double[]> samples = new ArrayList<>();
         ElapsedTime timer = new ElapsedTime();
@@ -501,7 +502,7 @@ public final class YawCouplingTuner extends MarsLinearOpMode {
     }
 
     private RampResult rampAndSampleTank(
-            TankDrive drive, DoubleSupplier yawRate, MultipleTelemetry telemetry) {
+            TankDrive drive, DoubleSupplier yawRate, Telemetry telemetry) {
         List<double[]> samples = new ArrayList<>();
         ElapsedTime timer = new ElapsedTime();
         double peakSpeed = 0;

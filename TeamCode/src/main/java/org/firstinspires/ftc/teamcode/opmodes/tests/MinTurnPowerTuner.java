@@ -31,7 +31,7 @@ public class MinTurnPowerTuner extends MarsLinearOpMode {
     public void runOpMode() {
         initRobot();
         MecanumDrive drive =
-                new MecanumDrive(hardwareMap, new Pose2d(0, 0, 0), this::batteryVoltage);
+                MecanumDrive.forMarsLinear(hardwareMap, new Pose2d(0, 0, 0), this::batteryVoltage);
 
         telemetry.addLine("Min Turn Power Tuner");
         telemetry.addLine("Hold A to ramp up turn power");

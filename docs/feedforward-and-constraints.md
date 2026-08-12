@@ -14,7 +14,8 @@ This document covers, for both `MecanumDrive` and `TankDrive`:
 
 Tune these as part of the [automated tuning flow](tuning.md) — after localization and the
 drive feedforward (`kS`/`kV`/`kA` via `AxialFeedforwardTuner`), and before the feedback
-gains (`FeedbackGainTuner` folds the constants below into its plant model). They refine an
+gains (`PathFeedbackGainTuner` runs with the production feedforward path, so these
+constants are in the loop). They refine an
 already-working robot. Background on why the plant is identified (not “tuned”) and how
 Road Runner uses it for feedforward, planning, and gains:
 [Plant Model and Identification](tuning-theory.md).

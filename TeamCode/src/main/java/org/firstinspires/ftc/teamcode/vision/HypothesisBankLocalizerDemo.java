@@ -38,7 +38,8 @@ public class HypothesisBankLocalizerDemo extends MarsLinearOpMode {
     public void runOpMode() {
         Pose2d startPose = new Pose2d(START_X, START_Y, Math.toRadians(START_HEADING_DEG));
         initRobot();
-        MecanumDrive drive = new MecanumDrive(hardwareMap, startPose, this::batteryVoltage);
+        MecanumDrive drive =
+                MecanumDrive.forMarsLinear(hardwareMap, startPose, this::batteryVoltage);
 
         Limelight3A limelight = hardwareMap.get(Limelight3A.class, "limelight");
         limelight.pipelineSwitch(0);

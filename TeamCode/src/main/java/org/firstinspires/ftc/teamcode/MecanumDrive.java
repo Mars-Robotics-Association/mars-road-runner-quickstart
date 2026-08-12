@@ -30,6 +30,7 @@ import com.acmerobotics.roadrunner.ftc.LynxFirmware;
 import com.acmerobotics.roadrunner.ftc.OverflowEncoder;
 import com.acmerobotics.roadrunner.ftc.PositionVelocityPair;
 import com.acmerobotics.roadrunner.ftc.RawEncoder;
+import com.qualcomm.hardware.lynx.LynxModule;
 import com.qualcomm.hardware.rev.RevHubOrientationOnRobot;
 import com.qualcomm.robotcore.hardware.DcMotor;
 import com.qualcomm.robotcore.hardware.DcMotorEx;
@@ -48,6 +49,7 @@ import org.firstinspires.ftc.teamcode.opmodes.base.MarsLinearOpMode;
 import java.util.ArrayList;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Objects;
 import java.util.function.DoubleSupplier;
 
 @Config
@@ -193,9 +195,9 @@ public final class MecanumDrive {
     public final VoltageSensor voltageSensor;
 
     /**
-     * Battery voltage (volts) for feedforward compensation. Defaults to {@link
-     * VoltageSensor#getVoltage()} on the hub sensor; OpModes that cache battery once per loop can
-     * pass a custom supplier (e.g. {@link MarsLinearOpMode#batteryVoltage}).
+     * Battery voltage (volts) for feedforward compensation. Stock constructor uses {@link
+     * VoltageSensor#getVoltage()} each sample; {@link #forMarsLinear} uses the OpMode frame cache
+     * (e.g. {@link MarsLinearOpMode#batteryVoltage()}).
      */
     private final DoubleSupplier voltageGetter;
 
@@ -324,20 +326,40 @@ public final class MecanumDrive {
         }
     }
 
-    /** Uses the hub {@link VoltageSensor} for each feedforward voltage sample. */
+    /**
+     * Stock / RR path: hub {@link VoltageSensor} for each FF sample, and enables {@link
+     * LynxModule.BulkCachingMode#AUTO} on all hubs. Prefer {@link #forMarsLinear} under {@link
+     * MarsLinearOpMode} so AUTO does not undo MANUAL bulk from {@code initRobot()}.
+     */
     public MecanumDrive(HardwareMap hardwareMap, Pose2d pose) {
-        this(hardwareMap, pose, null);
+        this(hardwareMap, pose, null, true);
     }
 
     /**
-     * @param voltageGetter battery volts for FF compensation; {@code null} uses {@link
-     *     VoltageSensor#getVoltage()} on the drive's hub sensor each time
+     * Frame-owned drive for {@link MarsLinearOpMode}: uses {@code batteryVoltage} for FF and does
+     * not change bulk caching (caller already set MANUAL via {@code initRobot()} / BulkReads).
+     *
+     * @param batteryVoltage typically {@code this::batteryVoltage} after {@code initRobot()}
      */
-    public MecanumDrive(HardwareMap hardwareMap, Pose2d pose, DoubleSupplier voltageGetter) {
+    public static MecanumDrive forMarsLinear(
+            HardwareMap hardwareMap, Pose2d pose, DoubleSupplier batteryVoltage) {
+        Objects.requireNonNull(batteryVoltage, "batteryVoltage");
+        return new MecanumDrive(hardwareMap, pose, batteryVoltage, false);
+    }
+
+    /**
+     * @param voltageGetter battery volts for FF; {@code null} uses the hub sensor each sample
+     * @param autoBulk when true, sets AUTO bulk on all hubs; when false, leaves bulk mode alone
+     */
+    private MecanumDrive(
+            HardwareMap hardwareMap, Pose2d pose, DoubleSupplier voltageGetter, boolean autoBulk) {
         LynxFirmware.throwIfModulesAreOutdated(hardwareMap);
 
-        // Bulk caching is owned by the OpMode (e.g. BulkReads / MarsLinearOpMode.nextFrame),
-        // not the drive — do not set AUTO here or it will undo MANUAL bulk mode.
+        if (autoBulk) {
+            for (LynxModule module : hardwareMap.getAll(LynxModule.class)) {
+                module.setBulkCachingMode(LynxModule.BulkCachingMode.AUTO);
+            }
+        }
 
         // TODO: make sure your config has motors with these names (or change them)
         //   see

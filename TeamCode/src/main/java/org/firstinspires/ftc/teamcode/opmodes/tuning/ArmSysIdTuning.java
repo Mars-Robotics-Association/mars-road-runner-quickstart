@@ -1,16 +1,12 @@
 package org.firstinspires.ftc.teamcode.opmodes.tuning;
 
 import com.acmerobotics.dashboard.config.Config;
-import com.qualcomm.hardware.lynx.LynxModule;
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
 import com.qualcomm.robotcore.hardware.DcMotorEx;
 import com.qualcomm.robotcore.util.ElapsedTime;
 import com.qualcomm.robotcore.util.Range;
 
-import org.firstinspires.ftc.robotcore.external.navigation.VoltageUnit;
 import org.firstinspires.ftc.teamcode.opmodes.base.MarsLinearOpMode;
-import org.firstinspires.ftc.teamcode.robot.BulkReads;
-import org.firstinspires.ftc.teamcode.utils.HubHelper;
 import org.marsroboticsassociation.controllib.mechanism.ArmSysId;
 
 import java.util.ArrayList;
@@ -151,9 +147,7 @@ public class ArmSysIdTuning extends MarsLinearOpMode {
 
     public static Params PARAMS = new Params();
 
-    private BulkReads bulkReads;
     private DcMotorEx motor;
-    private LynxModule hub;
     private double ticksToRad;
 
     // Raw logs ({theta, volts, time} per capture), accumulated into fit rows at solve time so a
@@ -170,13 +164,11 @@ public class ArmSysIdTuning extends MarsLinearOpMode {
     @Override
     public void runOpMode() throws InterruptedException {
         initRobot();
-        bulkReads = bulk;
 
         motor = hardwareMap.get(DcMotorEx.class, PARAMS.MOTOR_NAME);
         motor.setMode(DcMotorEx.RunMode.RUN_WITHOUT_ENCODER);
         motor.setZeroPowerBehavior(DcMotorEx.ZeroPowerBehavior.BRAKE);
 
-        hub = HubHelper.getHubForMotor(motor, hardwareMap);
         ticksToRad = 2.0 * Math.PI / PARAMS.TICKS_PER_ARM_REV;
 
         telemetry.addLine("ArmSysId — two-stage (holds for kS/kV/gravity, runs for kA)");
@@ -312,14 +304,15 @@ public class ArmSysIdTuning extends MarsLinearOpMode {
 
         run.reset();
 
-        while (opModeIsActive() && run.seconds() < PARAMS.RUN_DURATION_S) {
-            bulkReads.readAll();
-
+        while (nextFrame() && run.seconds() < PARAMS.RUN_DURATION_S) {
             double t = run.seconds();
             double dt = t - lastT;
             lastT = t;
+            if (dt < 1e-6) {
+                continue;
+            }
 
-            double battV = hub.getInputVoltage(VoltageUnit.VOLTS);
+            double battV = batteryVoltage();
             // Guard divide-by-zero / brownout; recompute power every loop from live V_batt.
             double power = battV > 0.5 ? Range.clip(voltageCmd / battV, -1.0, 1.0) : 0.0;
             motor.setPower(power);
@@ -336,7 +329,6 @@ public class ArmSysIdTuning extends MarsLinearOpMode {
                         Math.toDegrees(theta),
                         PARAMS.MIN_ANGLE_DEG,
                         PARAMS.MAX_ANGLE_DEG);
-                telemetry.update();
                 break;
             }
 
@@ -354,18 +346,16 @@ public class ArmSysIdTuning extends MarsLinearOpMode {
             addRangeTelemetry();
             telemetry.addData("samples this run", thetaList.size());
             telemetry.addData("runs so far", runsCompleted);
-            telemetry.update();
         }
 
-        cutPower();
-        if (!opModeIsActive()) {
+        if (isStopRequested()) {
             return false;
         }
+        cutPower();
 
         int n = thetaList.size();
         if (n < 10) {
             telemetry.addData("Run", "%s — too few samples (%d), skipped", label, n);
-            telemetry.update();
             return true;
         }
 
@@ -380,7 +370,6 @@ public class ArmSysIdTuning extends MarsLinearOpMode {
                 label,
                 n,
                 meanDtMs);
-        telemetry.update();
         return true;
     }
 
@@ -401,19 +390,19 @@ public class ArmSysIdTuning extends MarsLinearOpMode {
         ElapsedTime run = new ElapsedTime();
         double loSoft = minAngleRad() + stopMarginRad();
         double hiSoft = maxAngleRad() - stopMarginRad();
-        double lastT = 0.0;
         double integralV = 0.0;
 
         run.reset();
 
-        while (opModeIsActive() && run.seconds() < PARAMS.HOLD_MAX_S) {
-            bulkReads.readAll();
-
+        while (nextFrame() && run.seconds() < PARAMS.HOLD_MAX_S) {
             double t = run.seconds();
-            double dt = t - lastT;
-            lastT = t;
+            double dt = loopDt();
+            if (!(dt > 1e-6) || dt > 0.5) {
+                // NaN before second advance, duplicate frame, or long gap after idle collect.
+                continue;
+            }
 
-            double battV = hub.getInputVoltage(VoltageUnit.VOLTS);
+            double battV = batteryVoltage();
             double vel = motor.getVelocity() * ticksToRad; // encoder velocity, rad/s
             double errV = targetVel - vel;
             integralV += errV * dt;
@@ -443,13 +432,12 @@ public class ArmSysIdTuning extends MarsLinearOpMode {
             addRangeTelemetry();
             telemetry.addData("samples this hold", thetaList.size());
             telemetry.addData("holds so far", holdsCompleted);
-            telemetry.update();
         }
 
-        cutPower();
-        if (!opModeIsActive()) {
+        if (isStopRequested()) {
             return false;
         }
+        cutPower();
 
         int n = thetaList.size();
         if (n < 12) {
@@ -458,7 +446,6 @@ public class ArmSysIdTuning extends MarsLinearOpMode {
                     "%s — too few samples (%d), skipped. " + "Start near the opposite stop.",
                     label,
                     n);
-            telemetry.update();
             return true;
         }
 
@@ -467,7 +454,6 @@ public class ArmSysIdTuning extends MarsLinearOpMode {
         holdsCompleted++;
 
         telemetry.addData("Hold", "%s done: %d samples (rows built at solve)", label, n);
-        telemetry.update();
         return true;
     }
 
@@ -487,18 +473,16 @@ public class ArmSysIdTuning extends MarsLinearOpMode {
         motor.setPower(0);
         run.reset();
 
-        while (opModeIsActive() && run.seconds() < PARAMS.RINGDOWN_S) {
-            bulkReads.readAll();
+        while (nextFrame() && run.seconds() < PARAMS.RINGDOWN_S) {
             thetaList.add(readThetaRad());
             timeList.add(run.seconds());
             telemetry.addData("Ring-down", "flick the arm, hold the base still");
             telemetry.addData("t", "%.2f / %.2f s", run.seconds(), PARAMS.RINGDOWN_S);
-            telemetry.update();
         }
-        motor.setZeroPowerBehavior(DcMotorEx.ZeroPowerBehavior.BRAKE);
-        if (!opModeIsActive()) {
+        if (isStopRequested()) {
             return false;
         }
+        motor.setZeroPowerBehavior(DcMotorEx.ZeroPowerBehavior.BRAKE);
 
         int n = thetaList.size();
         double[] theta = new double[n];
@@ -514,7 +498,6 @@ public class ArmSysIdTuning extends MarsLinearOpMode {
         } else {
             telemetry.addData("Ring-down", "no clear oscillation — flick harder or set FLEX_HZ");
         }
-        telemetry.update();
         return true;
     }
 

@@ -95,30 +95,34 @@ public final class TuningOpModes {
 
             @Override
             public void setParDirection(@NonNull DcMotorSimple.Direction direction) {
-                parDirection = direction == DcMotorSimple.Direction.FORWARD ?
-                        GoBildaPinpointDriver.EncoderDirection.FORWARD :
-                        GoBildaPinpointDriver.EncoderDirection.REVERSED;
+                parDirection =
+                        direction == DcMotorSimple.Direction.FORWARD
+                                ? GoBildaPinpointDriver.EncoderDirection.FORWARD
+                                : GoBildaPinpointDriver.EncoderDirection.REVERSED;
                 pl.driver.setEncoderDirections(parDirection, perpDirection);
             }
 
             @Override
             public DcMotorSimple.Direction getParDirection() {
-                return parDirection == GoBildaPinpointDriver.EncoderDirection.FORWARD ?
-                        DcMotorSimple.Direction.FORWARD : DcMotorSimple.Direction.REVERSE;
+                return parDirection == GoBildaPinpointDriver.EncoderDirection.FORWARD
+                        ? DcMotorSimple.Direction.FORWARD
+                        : DcMotorSimple.Direction.REVERSE;
             }
 
             @Override
             public void setPerpDirection(@NonNull DcMotorSimple.Direction direction) {
-                perpDirection = direction == DcMotorSimple.Direction.FORWARD ?
-                        GoBildaPinpointDriver.EncoderDirection.FORWARD :
-                        GoBildaPinpointDriver.EncoderDirection.REVERSED;
+                perpDirection =
+                        direction == DcMotorSimple.Direction.FORWARD
+                                ? GoBildaPinpointDriver.EncoderDirection.FORWARD
+                                : GoBildaPinpointDriver.EncoderDirection.REVERSED;
                 pl.driver.setEncoderDirections(parDirection, perpDirection);
             }
 
             @Override
             public DcMotorSimple.Direction getPerpDirection() {
-                return perpDirection == GoBildaPinpointDriver.EncoderDirection.FORWARD ?
-                        DcMotorSimple.Direction.FORWARD : DcMotorSimple.Direction.REVERSE;
+                return perpDirection == GoBildaPinpointDriver.EncoderDirection.FORWARD
+                        ? DcMotorSimple.Direction.FORWARD
+                        : DcMotorSimple.Direction.REVERSE;
             }
         };
     }
@@ -129,160 +133,168 @@ public final class TuningOpModes {
 
         DriveViewFactory dvf;
         if (DRIVE_CLASS.equals(MecanumDrive.class)) {
-            dvf = hardwareMap -> {
-                MecanumDrive md = new MecanumDrive(hardwareMap, new Pose2d(0, 0, 0));
-                LazyImu lazyImu = md.lazyImu;
+            dvf =
+                    hardwareMap -> {
+                        MecanumDrive md = new MecanumDrive(hardwareMap, new Pose2d(0, 0, 0));
+                        LazyImu lazyImu = md.lazyImu;
 
-                List<EncoderGroup> encoderGroups = new ArrayList<>();
-                List<EncoderRef> leftEncs = new ArrayList<>(), rightEncs = new ArrayList<>();
-                List<EncoderRef> parEncs = new ArrayList<>(), perpEncs = new ArrayList<>();
-                if (md.localizer instanceof MecanumDrive.DriveLocalizer) {
-                    MecanumDrive.DriveLocalizer dl = (MecanumDrive.DriveLocalizer) md.localizer;
-                    encoderGroups.add(new LynxQuadratureEncoderGroup(
-                            hardwareMap.getAll(LynxModule.class),
-                            Arrays.asList(dl.leftFront, dl.leftBack, dl.rightFront, dl.rightBack)
-                    ));
-                    leftEncs.add(new EncoderRef(0, 0));
-                    leftEncs.add(new EncoderRef(0, 1));
-                    rightEncs.add(new EncoderRef(0, 2));
-                    rightEncs.add(new EncoderRef(0, 3));
-                } else if (md.localizer instanceof ThreeDeadWheelLocalizer) {
-                    ThreeDeadWheelLocalizer dl = (ThreeDeadWheelLocalizer) md.localizer;
-                    encoderGroups.add(new LynxQuadratureEncoderGroup(
-                            hardwareMap.getAll(LynxModule.class),
-                            Arrays.asList(dl.par0, dl.par1, dl.perp)
-                    ));
-                    parEncs.add(new EncoderRef(0, 0));
-                    parEncs.add(new EncoderRef(0, 1));
-                    perpEncs.add(new EncoderRef(0, 2));
-                } else if (md.localizer instanceof TwoDeadWheelLocalizer) {
-                    TwoDeadWheelLocalizer dl = (TwoDeadWheelLocalizer) md.localizer;
-                    encoderGroups.add(new LynxQuadratureEncoderGroup(
-                            hardwareMap.getAll(LynxModule.class),
-                            Arrays.asList(dl.par, dl.perp)
-                    ));
-                    parEncs.add(new EncoderRef(0, 0));
-                    perpEncs.add(new EncoderRef(0, 1));
-                } else if (md.localizer instanceof OTOSLocalizer) {
-                    OTOSLocalizer ol = (OTOSLocalizer) md.localizer;
-                    encoderGroups.add(new OTOSEncoderGroup(ol.otos));
-                    parEncs.add(new EncoderRef(0, 0));
-                    perpEncs.add(new EncoderRef(0, 1));
-                    lazyImu = new OTOSIMU(ol.otos);
-                }  else if (md.localizer instanceof PinpointLocalizer) {
-                    PinpointView pv = makePinpointView((PinpointLocalizer) md.localizer);
-                    encoderGroups.add(new PinpointEncoderGroup(pv));
-                    parEncs.add(new EncoderRef(0, 0));
-                    perpEncs.add(new EncoderRef(0, 1));
-                    lazyImu = new PinpointIMU(pv);
-                } else {
-                    throw new RuntimeException("unknown localizer: " + md.localizer.getClass().getName());
-                }
+                        List<EncoderGroup> encoderGroups = new ArrayList<>();
+                        List<EncoderRef> leftEncs = new ArrayList<>(),
+                                rightEncs = new ArrayList<>();
+                        List<EncoderRef> parEncs = new ArrayList<>(), perpEncs = new ArrayList<>();
+                        if (md.localizer instanceof MecanumDrive.DriveLocalizer) {
+                            MecanumDrive.DriveLocalizer dl =
+                                    (MecanumDrive.DriveLocalizer) md.localizer;
+                            encoderGroups.add(
+                                    new LynxQuadratureEncoderGroup(
+                                            hardwareMap.getAll(LynxModule.class),
+                                            Arrays.asList(
+                                                    dl.leftFront,
+                                                    dl.leftBack,
+                                                    dl.rightFront,
+                                                    dl.rightBack)));
+                            leftEncs.add(new EncoderRef(0, 0));
+                            leftEncs.add(new EncoderRef(0, 1));
+                            rightEncs.add(new EncoderRef(0, 2));
+                            rightEncs.add(new EncoderRef(0, 3));
+                        } else if (md.localizer instanceof ThreeDeadWheelLocalizer) {
+                            ThreeDeadWheelLocalizer dl = (ThreeDeadWheelLocalizer) md.localizer;
+                            encoderGroups.add(
+                                    new LynxQuadratureEncoderGroup(
+                                            hardwareMap.getAll(LynxModule.class),
+                                            Arrays.asList(dl.par0, dl.par1, dl.perp)));
+                            parEncs.add(new EncoderRef(0, 0));
+                            parEncs.add(new EncoderRef(0, 1));
+                            perpEncs.add(new EncoderRef(0, 2));
+                        } else if (md.localizer instanceof TwoDeadWheelLocalizer) {
+                            TwoDeadWheelLocalizer dl = (TwoDeadWheelLocalizer) md.localizer;
+                            encoderGroups.add(
+                                    new LynxQuadratureEncoderGroup(
+                                            hardwareMap.getAll(LynxModule.class),
+                                            Arrays.asList(dl.par, dl.perp)));
+                            parEncs.add(new EncoderRef(0, 0));
+                            perpEncs.add(new EncoderRef(0, 1));
+                        } else if (md.localizer instanceof OTOSLocalizer) {
+                            OTOSLocalizer ol = (OTOSLocalizer) md.localizer;
+                            encoderGroups.add(new OTOSEncoderGroup(ol.otos));
+                            parEncs.add(new EncoderRef(0, 0));
+                            perpEncs.add(new EncoderRef(0, 1));
+                            lazyImu = new OTOSIMU(ol.otos);
+                        } else if (md.localizer instanceof PinpointLocalizer) {
+                            PinpointView pv = makePinpointView((PinpointLocalizer) md.localizer);
+                            encoderGroups.add(new PinpointEncoderGroup(pv));
+                            parEncs.add(new EncoderRef(0, 0));
+                            perpEncs.add(new EncoderRef(0, 1));
+                            lazyImu = new PinpointIMU(pv);
+                        } else {
+                            throw new RuntimeException(
+                                    "unknown localizer: " + md.localizer.getClass().getName());
+                        }
 
-                return new DriveView(
-                    DriveType.MECANUM,
-                        MecanumDrive.PARAMS.inPerTick,
-                        MecanumDrive.PARAMS.maxWheelVel,
-                        MecanumDrive.PARAMS.minProfileAccel,
-                        MecanumDrive.PARAMS.maxProfileAccel,
-                        encoderGroups,
-                        Arrays.asList(
-                                md.leftFront,
-                                md.leftBack
-                        ),
-                        Arrays.asList(
-                                md.rightFront,
-                                md.rightBack
-                        ),
-                        leftEncs,
-                        rightEncs,
-                        parEncs,
-                        perpEncs,
-                        lazyImu,
-                        md.voltageSensor,
-                        () -> new MotorFeedforward(MecanumDrive.PARAMS.kS,
-                                MecanumDrive.PARAMS.kV / MecanumDrive.PARAMS.inPerTick,
-                                MecanumDrive.PARAMS.kA / MecanumDrive.PARAMS.inPerTick),
-                        0
-                );
-            };
+                        return new DriveView(
+                                DriveType.MECANUM,
+                                MecanumDrive.PARAMS.inPerTick,
+                                MecanumDrive.PARAMS.maxWheelVel,
+                                MecanumDrive.PARAMS.minProfileAccel,
+                                MecanumDrive.PARAMS.maxProfileAccel,
+                                encoderGroups,
+                                Arrays.asList(md.leftFront, md.leftBack),
+                                Arrays.asList(md.rightFront, md.rightBack),
+                                leftEncs,
+                                rightEncs,
+                                parEncs,
+                                perpEncs,
+                                lazyImu,
+                                md.voltageSensor,
+                                () ->
+                                        new MotorFeedforward(
+                                                MecanumDrive.PARAMS.kS,
+                                                MecanumDrive.PARAMS.kV
+                                                        / MecanumDrive.PARAMS.inPerTick,
+                                                MecanumDrive.PARAMS.kA
+                                                        / MecanumDrive.PARAMS.inPerTick),
+                                0);
+                    };
         } else if (DRIVE_CLASS.equals(TankDrive.class)) {
-            dvf = hardwareMap -> {
-                TankDrive td = new TankDrive(hardwareMap, new Pose2d(0, 0, 0));
-                LazyImu lazyImu = td.lazyImu;
+            dvf =
+                    hardwareMap -> {
+                        TankDrive td = new TankDrive(hardwareMap, new Pose2d(0, 0, 0));
+                        LazyImu lazyImu = td.lazyImu;
 
-                List<EncoderGroup> encoderGroups = new ArrayList<>();
-                List<EncoderRef> leftEncs = new ArrayList<>(), rightEncs = new ArrayList<>();
-                List<EncoderRef> parEncs = new ArrayList<>(), perpEncs = new ArrayList<>();
-                if (td.localizer instanceof TankDrive.DriveLocalizer) {
-                    TankDrive.DriveLocalizer dl = (TankDrive.DriveLocalizer) td.localizer;
-                    List<Encoder> allEncoders = new ArrayList<>();
-                    allEncoders.addAll(dl.leftEncs);
-                    allEncoders.addAll(dl.rightEncs);
-                    encoderGroups.add(new LynxQuadratureEncoderGroup(
-                            hardwareMap.getAll(LynxModule.class),
-                            allEncoders
-                    ));
-                    for (int i = 0; i < dl.leftEncs.size(); i++) {
-                        leftEncs.add(new EncoderRef(0, i));
-                    }
-                    for (int i = 0; i < dl.rightEncs.size(); i++) {
-                        rightEncs.add(new EncoderRef(0, dl.leftEncs.size() + i));
-                    }
-                } else if (td.localizer instanceof ThreeDeadWheelLocalizer) {
-                    ThreeDeadWheelLocalizer dl = (ThreeDeadWheelLocalizer) td.localizer;
-                    encoderGroups.add(new LynxQuadratureEncoderGroup(
-                            hardwareMap.getAll(LynxModule.class),
-                            Arrays.asList(dl.par0, dl.par1, dl.perp)
-                    ));
-                    parEncs.add(new EncoderRef(0, 0));
-                    parEncs.add(new EncoderRef(0, 1));
-                    perpEncs.add(new EncoderRef(0, 2));
-                } else if (td.localizer instanceof TwoDeadWheelLocalizer) {
-                    TwoDeadWheelLocalizer dl = (TwoDeadWheelLocalizer) td.localizer;
-                    encoderGroups.add(new LynxQuadratureEncoderGroup(
-                            hardwareMap.getAll(LynxModule.class),
-                            Arrays.asList(dl.par, dl.perp)
-                    ));
-                    parEncs.add(new EncoderRef(0, 0));
-                    perpEncs.add(new EncoderRef(0, 1));
-                }  else if (td.localizer instanceof PinpointLocalizer) {
-                    PinpointView pv = makePinpointView((PinpointLocalizer) td.localizer);
-                    encoderGroups.add(new PinpointEncoderGroup(pv));
-                    parEncs.add(new EncoderRef(0, 0));
-                    perpEncs.add(new EncoderRef(0, 1));
-                    lazyImu = new PinpointIMU(pv);
-                } else if (td.localizer instanceof OTOSLocalizer) {
-                    OTOSLocalizer ol = (OTOSLocalizer) td.localizer;
-                    encoderGroups.add(new OTOSEncoderGroup(ol.otos));
-                    parEncs.add(new EncoderRef(0, 0));
-                    perpEncs.add(new EncoderRef(0, 1));
-                    lazyImu = new OTOSIMU(ol.otos);
-                } else {
-                    throw new RuntimeException("unknown localizer: " + td.localizer.getClass().getName());
-                }
+                        List<EncoderGroup> encoderGroups = new ArrayList<>();
+                        List<EncoderRef> leftEncs = new ArrayList<>(),
+                                rightEncs = new ArrayList<>();
+                        List<EncoderRef> parEncs = new ArrayList<>(), perpEncs = new ArrayList<>();
+                        if (td.localizer instanceof TankDrive.DriveLocalizer) {
+                            TankDrive.DriveLocalizer dl = (TankDrive.DriveLocalizer) td.localizer;
+                            List<Encoder> allEncoders = new ArrayList<>();
+                            allEncoders.addAll(dl.leftEncs);
+                            allEncoders.addAll(dl.rightEncs);
+                            encoderGroups.add(
+                                    new LynxQuadratureEncoderGroup(
+                                            hardwareMap.getAll(LynxModule.class), allEncoders));
+                            for (int i = 0; i < dl.leftEncs.size(); i++) {
+                                leftEncs.add(new EncoderRef(0, i));
+                            }
+                            for (int i = 0; i < dl.rightEncs.size(); i++) {
+                                rightEncs.add(new EncoderRef(0, dl.leftEncs.size() + i));
+                            }
+                        } else if (td.localizer instanceof ThreeDeadWheelLocalizer) {
+                            ThreeDeadWheelLocalizer dl = (ThreeDeadWheelLocalizer) td.localizer;
+                            encoderGroups.add(
+                                    new LynxQuadratureEncoderGroup(
+                                            hardwareMap.getAll(LynxModule.class),
+                                            Arrays.asList(dl.par0, dl.par1, dl.perp)));
+                            parEncs.add(new EncoderRef(0, 0));
+                            parEncs.add(new EncoderRef(0, 1));
+                            perpEncs.add(new EncoderRef(0, 2));
+                        } else if (td.localizer instanceof TwoDeadWheelLocalizer) {
+                            TwoDeadWheelLocalizer dl = (TwoDeadWheelLocalizer) td.localizer;
+                            encoderGroups.add(
+                                    new LynxQuadratureEncoderGroup(
+                                            hardwareMap.getAll(LynxModule.class),
+                                            Arrays.asList(dl.par, dl.perp)));
+                            parEncs.add(new EncoderRef(0, 0));
+                            perpEncs.add(new EncoderRef(0, 1));
+                        } else if (td.localizer instanceof PinpointLocalizer) {
+                            PinpointView pv = makePinpointView((PinpointLocalizer) td.localizer);
+                            encoderGroups.add(new PinpointEncoderGroup(pv));
+                            parEncs.add(new EncoderRef(0, 0));
+                            perpEncs.add(new EncoderRef(0, 1));
+                            lazyImu = new PinpointIMU(pv);
+                        } else if (td.localizer instanceof OTOSLocalizer) {
+                            OTOSLocalizer ol = (OTOSLocalizer) td.localizer;
+                            encoderGroups.add(new OTOSEncoderGroup(ol.otos));
+                            parEncs.add(new EncoderRef(0, 0));
+                            perpEncs.add(new EncoderRef(0, 1));
+                            lazyImu = new OTOSIMU(ol.otos);
+                        } else {
+                            throw new RuntimeException(
+                                    "unknown localizer: " + td.localizer.getClass().getName());
+                        }
 
-                return new DriveView(
-                        DriveType.TANK,
-                        TankDrive.PARAMS.inPerTick,
-                        TankDrive.PARAMS.maxWheelVel,
-                        TankDrive.PARAMS.minProfileAccel,
-                        TankDrive.PARAMS.maxProfileAccel,
-                        encoderGroups,
-                        td.leftMotors,
-                        td.rightMotors,
-                        leftEncs,
-                        rightEncs,
-                        parEncs,
-                        perpEncs,
-                        lazyImu,
-                        td.voltageSensor,
-                        () -> new MotorFeedforward(TankDrive.PARAMS.kS,
-                                TankDrive.PARAMS.kV / TankDrive.PARAMS.inPerTick,
-                                TankDrive.PARAMS.kA / TankDrive.PARAMS.inPerTick),
-                        0
-                );
-            };
+                        return new DriveView(
+                                DriveType.TANK,
+                                TankDrive.PARAMS.inPerTick,
+                                TankDrive.PARAMS.maxWheelVel,
+                                TankDrive.PARAMS.minProfileAccel,
+                                TankDrive.PARAMS.maxProfileAccel,
+                                encoderGroups,
+                                td.leftMotors,
+                                td.rightMotors,
+                                leftEncs,
+                                rightEncs,
+                                parEncs,
+                                perpEncs,
+                                lazyImu,
+                                td.voltageSensor,
+                                () ->
+                                        new MotorFeedforward(
+                                                TankDrive.PARAMS.kS,
+                                                TankDrive.PARAMS.kV / TankDrive.PARAMS.inPerTick,
+                                                TankDrive.PARAMS.kA / TankDrive.PARAMS.inPerTick),
+                                0);
+                    };
         } else {
             throw new RuntimeException();
         }
@@ -292,45 +304,59 @@ public final class TuningOpModes {
         manager.register(metaForClass(ForwardRampLogger.class), new ForwardRampLogger(dvf));
         manager.register(metaForClass(LateralPushTest.class), new LateralPushTest(dvf));
         manager.register(metaForClass(LateralRampLogger.class), new LateralRampLogger(dvf));
-        manager.register(metaForClass(ManualFeedforwardTuner.class), new ManualFeedforwardTuner(dvf));
-        manager.register(metaForClass(MecanumMotorDirectionDebugger.class), new MecanumMotorDirectionDebugger(dvf));
-        manager.register(metaForClass(DeadWheelDirectionDebugger.class), new DeadWheelDirectionDebugger(dvf));
+        manager.register(
+                metaForClass(ManualFeedforwardTuner.class), new ManualFeedforwardTuner(dvf));
+        manager.register(
+                metaForClass(MecanumMotorDirectionDebugger.class),
+                new MecanumMotorDirectionDebugger(dvf));
+        manager.register(
+                metaForClass(DeadWheelDirectionDebugger.class),
+                new DeadWheelDirectionDebugger(dvf));
 
         manager.register(metaForClass(ManualFeedbackTuner.class), ManualFeedbackTuner.class);
         manager.register(metaForClass(SplineTest.class), SplineTest.class);
         manager.register(metaForClass(LocalizationTest.class), LocalizationTest.class);
 
-        // MARS extensions: automatic on-robot tuners for the feedforward constants and feedback gains
+        // MARS extensions: automatic on-robot tuners for the feedforward constants and feedback
+        // gains
         manager.register(metaForClass(YawCouplingTuner.class), YawCouplingTuner.class);
         manager.register(metaForClass(AxialFeedforwardTuner.class), AxialFeedforwardTuner.class);
         manager.register(metaForClass(TrackWidthTuner.class), TrackWidthTuner.class);
-        manager.register(metaForClass(FeedbackGainTuner.class), FeedbackGainTuner.class);
+        manager.register(metaForClass(PathFeedbackGainTuner.class), PathFeedbackGainTuner.class);
         if (DRIVE_CLASS.equals(MecanumDrive.class)) {
-            manager.register(metaForClass(LateralFeedforwardTuner.class), LateralFeedforwardTuner.class);
+            manager.register(
+                    metaForClass(LateralFeedforwardTuner.class), LateralFeedforwardTuner.class);
         }
 
-        manager.register(metaForClass(OTOSAngularScalarTuner.class), new OTOSAngularScalarTuner(dvf));
+        manager.register(
+                metaForClass(OTOSAngularScalarTuner.class), new OTOSAngularScalarTuner(dvf));
         manager.register(metaForClass(OTOSLinearScalarTuner.class), new OTOSLinearScalarTuner(dvf));
-        manager.register(metaForClass(OTOSHeadingOffsetTuner.class), new OTOSHeadingOffsetTuner(dvf));
-        manager.register(metaForClass(OTOSPositionOffsetTuner.class), new OTOSPositionOffsetTuner(dvf));
+        manager.register(
+                metaForClass(OTOSHeadingOffsetTuner.class), new OTOSHeadingOffsetTuner(dvf));
+        manager.register(
+                metaForClass(OTOSPositionOffsetTuner.class), new OTOSPositionOffsetTuner(dvf));
 
-        FtcDashboard.getInstance().withConfigRoot(configRoot -> {
-            for (Class<?> c : Arrays.asList(
-                    AngularRampLogger.class,
-                    ForwardRampLogger.class,
-                    LateralRampLogger.class,
-                    ManualFeedforwardTuner.class,
-                    MecanumMotorDirectionDebugger.class,
-                    ManualFeedbackTuner.class,
-                    YawCouplingTuner.class,
-                    AxialFeedforwardTuner.class,
-                    LateralFeedforwardTuner.class,
-                    TrackWidthTuner.class,
-                    FeedbackGainTuner.class,
-                    TunerRegression.class
-            )) {
-                configRoot.putVariable(c.getSimpleName(), ReflectionConfig.createVariableFromClass(c));
-            }
-        });
+        FtcDashboard.getInstance()
+                .withConfigRoot(
+                        configRoot -> {
+                            for (Class<?> c :
+                                    Arrays.asList(
+                                            AngularRampLogger.class,
+                                            ForwardRampLogger.class,
+                                            LateralRampLogger.class,
+                                            ManualFeedforwardTuner.class,
+                                            MecanumMotorDirectionDebugger.class,
+                                            ManualFeedbackTuner.class,
+                                            YawCouplingTuner.class,
+                                            AxialFeedforwardTuner.class,
+                                            LateralFeedforwardTuner.class,
+                                            TrackWidthTuner.class,
+                                            PathFeedbackGainTuner.class,
+                                            TunerRegression.class)) {
+                                configRoot.putVariable(
+                                        c.getSimpleName(),
+                                        ReflectionConfig.createVariableFromClass(c));
+                            }
+                        });
     }
 }

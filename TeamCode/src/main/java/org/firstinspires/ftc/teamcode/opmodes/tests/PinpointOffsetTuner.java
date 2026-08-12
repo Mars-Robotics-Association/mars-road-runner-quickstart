@@ -53,7 +53,7 @@ public class PinpointOffsetTuner extends MarsLinearOpMode {
     public void runOpMode() {
         initRobot();
         MecanumDrive drive =
-                new MecanumDrive(hardwareMap, new Pose2d(0, 0, 0), this::batteryVoltage);
+                MecanumDrive.forMarsLinear(hardwareMap, new Pose2d(0, 0, 0), this::batteryVoltage);
 
         var poseHistory = new ArrayDeque<Pose2d>(poseHistorySize + 1);
 

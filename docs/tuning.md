@@ -23,7 +23,7 @@ automated (they measure physical geometry or require human observation).
 | 5 | Track width correction | **`TrackWidthTuner`** | `trackWidthTicks` | **automatic** |
 | 6 | Strafe feedforward (mecanum) | **`LateralFeedforwardTuner`** | `lateralKS/KV/KA`, enable `useAnisotropicFeedforward` | **automatic** |
 | 7 | Straight-line curl | **`YawCouplingTuner`** | `yawCoupling*` | **automatic** |
-| 8 | Feedback gains | **`FeedbackGainTuner`** | `axialGain`, `lateralGain`, `headingGain` + vel gains (tank: `turnGain`, `turnVelGain`) | **automatic** |
+| 8 | Feedback gains | **`PathFeedbackGainTuner`** (mecanum) | `axialGain`, `lateralGain`, `headingGain` (vel gains stay 0 by default) | **automatic** |
 | 9 | Verification | `ManualFeedbackTuner`, `SplineTest` | — | manual check |
 
 Notes on the flow:
@@ -99,9 +99,9 @@ In practice that makes it a **get-within-~10%-and-move-on** parameter:
    `PARAMS`, and prints it — a wrong value shows up as a slope off 1.0, and the
    correction is just dividing by it. Re-run (no paste needed in-session); the slope
    should come back ≈ 1.00.
-3. Residual error is absorbed automatically: `FeedbackGainTuner` tunes the heading loop
-   against the plant as it actually responds, so a few percent of track-width error just
-   shifts the heading gains it lands on.
+3. Residual error is absorbed automatically: `PathFeedbackGainTuner` ladders the heading
+   gain on real path tracking, so a few percent of track-width error just shifts the
+   heading gain it lands on.
 
 ---
 
@@ -177,127 +177,78 @@ values printed on telemetry.
 
 ---
 
-## Automatic feedback gains (`FeedbackGainTuner`)
+## Automatic feedback gains (`PathFeedbackGainTuner`)
 
 **Problem it solves.** The stock procedure for `axialGain`, `lateralGain`, `headingGain`
-and the `*VelGain`s is "guess a number, run `ManualFeedbackTuner`, look at the plots,
-repeat." `FeedbackGainTuner` finds the gains on the robot in a couple of minutes.
+is "guess a number, run `ManualFeedbackTuner`, look at the plots, repeat."
+`PathFeedbackGainTuner` does the same out-and-back line you use by eye, ladders each
+position gain, and backs off when the path starts to stop-then-lunge or thrash — without
+short bump tests that happily climb to unusable gains of 10–20.
+
+Mecanum only (holonomic path gains). Tank: use `ManualFeedbackTuner` for turn gains;
+path following uses Ramsete defaults.
 
 ### How it works
 
-Two ideas combined:
+For each axis it runs long out-and-back legs (`DISTANCE`, default 64 in) at a discrete
+gain ladder (`START_GAIN` … `MAX_GAIN` by `GAIN_STEP`), scores command chatter in the
+low-speed window and **stop-short-then-lunge** hesitation near path end, then keeps the
+last fully quiet clean gain (preferring zero-hesitation when the top clean still had mild
+hes).
 
-1. **The feedforward already contains a plant model.** With voltage-compensated
-   feedforward, each axis of the closed loop behaves like a second-order system governed
-   by the motor time constant `τ = kA / kV`. Picking a control bandwidth `ωn` and damping
-   `ζ` then *determines* the gains:
+Axes order:
 
-   ```
-   posGain = ωn² · τ
-   velGain = 2·ζ·ωn·τ − 1   (clamped at 0; the plant contributes damping of its own)
-   ```
+1. **Axial** — field-X `lineToX` at heading 0; soft heading hold.
+2. **Heading** — same path with axial locked at its best.
+3. **Lateral** (optional) — return home, turn 90°, strafe along the same field-X corridor
+   at constant heading.
 
-   So instead of searching a 6-dimensional gain space, the tuner searches one knob per
-   axis — bandwidth — and the pos/vel gains always stay consistently matched.
-
-2. **Automated profiled bump testing.** For each axis it moves a smooth cosine reference
-   to an offset pose (8 in translation / 40° heading by default over ~1.2 s), lets the
-   holonomic controller track it through the production feedforward path, and measures
-   overshoot, error-sign reversals, velocity chatter, and settling time. Starting from a
-   conservative bandwidth, it raises `ωn` by ~1.4× while the response stays clean and
-   stops at the last clean setting once the response starts to ring — the classic
-   "turn it up until it oscillates, then back off," automated. Every test steps out and
-   then back, so the robot ends each iteration where it started.
-
-   Pure static setpoint steps are avoided on purpose: holding a fixed target through
-   `kS · sign(v)` lives in the low-speed relay region and produces a high-frequency
-   "chihuahua" shake that is not representative of trajectory tracking (where the
-   reference velocity keeps the sign consistent until the profile ends).
-
-   During a measurement bump only the axis under test has feedback gains (other axes at
-   zero) so the score isolates that axis. Exception: lateral bumps keep a soft heading
-   fixture so open-loop strafe curl does not dominate the lateral score. Between axes, a
-   hold-level recenter returns the robot to field home.
-
-Axes are tuned in order **heading → axial → lateral**. On tank drive only the turn
-controller is tuned; path following uses Ramsete, whose defaults (`ramseteZeta`,
-`ramseteBBar`) rarely need adjustment.
-
-The step tests drive the wheels through the same `setDriveCommand` path the trajectory
-follower uses, so anisotropic feedforward, yaw coupling, and battery-voltage compensation
-are all in the loop — the gains are tuned against exactly the plant they'll control.
+Velocity gains stay at `VEL_GAIN` (default 0). Production feedforward via
+`setDriveCommand` is in the loop (anisotropic FF, yaw coupling, voltage compensation).
 
 ### Procedure
 
-1. Finish localization and feedforward tuning first (steps 1–7 above). `kA` must be
-   tuned and positive — `τ = kA/kV` is the model the synthesis relies on. The tuner
-   refuses to run otherwise. Prior automatic steps write into live `PARAMS`, so you can
-   continue in the same RC session without pasting first.
-2. Clear about 2 ft around the robot in every direction. It rotates in place, then steps
-   forward/back, then sideways.
-3. Run `FeedbackGainTuner`. Watch the iteration telemetry; when it finishes it prints
-   all six gains (two for tank) and writes them into `PARAMS`, so they are live for the
-   rest of the session. Each run also writes two CSVs on the hub under `/sdcard/FIRST/`:
-   `fbgain_samples_<stamp>.csv` (every control-loop sample) and
-   `fbgain_summary_<stamp>.csv` (one row per out/back leg, plus a `meta` row with plant
-   params). Pull them with `telemetry/pull.sh`.
-4. Paste the values into `Params` before restart/redeploy, then verify with
-   `ManualFeedbackTuner` and `SplineTest`.
+1. Finish localization and feedforward tuning first (steps 1–7). Positive $k_V$/$k_A$
+   required. Prior automatic steps write into live `PARAMS`, so you can continue in the
+   same RC session without pasting first.
+2. Clear a straight corridor of about `DISTANCE + 12` inches and room to spin at the
+   start for the lateral reorient.
+3. Run `PathFeedbackGainTuner`. It writes gains into live `PARAMS` and returns to the
+   start pose. CSVs under `/sdcard/FIRST/`: `path_fbgain_samples_<stamp>.csv` and
+   `path_fbgain_summary_<stamp>.csv`. Pull with `telemetry/pull.sh`.
+4. Paste into `Params` before restart/redeploy; verify with `ManualFeedbackTuner` and
+   `SplineTest`.
 
 ### Knobs (Dashboard)
 
 | Knob | Default | Meaning |
 |------|---------|---------|
-| `STEP_INCHES` / `STEP_DEGREES` | 8 / 40 | step sizes for the bump tests |
-| `MOVE_SEC` | 1.2 | seconds for the smooth reference to travel the step |
-| `ZETA` | 1.0 | target damping ratio (lower = snappier but bouncier) |
-| `START_BANDWIDTH` | 0.35 | initial `ωn` as a fraction of the plant pole `1/τ` |
-| `MAX_START_OMEGA` | 3.0 | absolute cap on starting `ωn` (rad/s) |
-| `MAX_OVERSHOOT_FRAC` | 0.28 | overshoot above this: keep the gain but stop growing ω |
-| `REJECT_OVERSHOOT_FRAC` | 0.45 | overshoot above this hard-fails the setting |
-| `HOLD_POS_GAIN` / `HOLD_VEL_GAIN` | 2.5 / 0.3 | translation gains for between-phase recenter only |
-| `HOLD_HEADING_POS` / `HOLD_HEADING_VEL` | 0.7 / 0.45 | soft heading for recenter, and as a lateral measurement fixture |
-| home recenter | on | between-phase return to field home after heading and after axial |
-| `FFT_MIN_HOLD_SEC` | 0.85 | hold-phase length so the oscillation FFT has enough samples |
-| `FFT_FMIN_HZ` | 2.5 | ignore peaks below this (and below ~1.5 cycles/window) — settle tails are ~1 Hz |
-| `FFT_PEAK_RATIO_EDGE` | 8 | error peak/median → stop growing ω **if** hold RMS ≥ `FFT_ERR_RMS_EDGE_MUL` × settle band |
-| `FFT_PEAK_RATIO_REJECT` | 12 | with matching cmd peak **and** hold RMS ≥ `FFT_ERR_RMS_REJECT_MUL` × settle band → hard-reject |
-| `FFT_ERR_RMS_EDGE_MUL` | 1.25 | min hold-error RMS / settle-tol for FFT soft edge (quiet holds ignore spectrum) |
-| `FFT_ERR_RMS_REJECT_MUL` | 2.0 | min hold-error RMS / settle-tol for FFT hard ring |
-| `MAX_HARD_REJECT_STREAK` | 2 | give up an axis after this many hard rejects with no clean best |
-| `MAX_VEL_FLIPS` | 12 | axis-velocity sign flips above this reject (catches kS chatter) |
-| `MAX_POS_GAIN` | 20 | ceiling on translation position gains |
-| `MAX_HEADING_POS_GAIN` | 10 | ceiling on heading / tank-turn position gain |
-| `SETTLE_TOL_IN` / `SETTLE_TOL_DEG` | 0.6 / 2.5 | settle band that defines "arrived" |
-| `MAX_ITERS` | 6 | step-pair iterations per axis |
+| `DISTANCE` | 64 | out-and-back length (in) |
+| `CYCLES` | 2 | out-and-backs per gain step |
+| `START_GAIN` / `HEADING_START_GAIN` | 2 / 3 | first gain on the ladder (heading starts higher) |
+| `MAX_GAIN` / `GAIN_STEP` | 12 / 1 | ladder ceiling and step |
+| `HOLD_HEADING_GAIN` | 4 | heading while axial ladder runs |
+| `TUNE_LATERAL` | true | run lateral phase after heading |
+| `VEL_GAIN` | 0 | all three velocity gains |
+| `MAX_*_CMD_FLIPS` | 16–18 | hard reject on low-speed command sign flips |
+| `HESITATION_V_FAST` / `HESITATION_REMAINING_MIN` | 8 / 1.5 | stop-short re-lunge detection |
+| `MAX_HESITATIONS_EDGE` / `MAX_HESITATIONS_REJECT` | 2 / 3 | soft edge vs hard reject |
 
 ### If it fails
 
-- **"robot barely moved on the first step"** — the feedforward or localization is off;
-  re-check steps 2–4 and motor directions.
-- **"never settled"** — the robot stalls just outside the settle band, usually an
-  underestimated `kS`. Re-run `AxialFeedforwardTuner`, or widen `SETTLE_TOL_IN`.
-- **"oscillatory even at the lowest bandwidth"** — usually noisy or laggy localization;
-  check the localizer before blaming the gains.
-- **"velocity chatter even at the lowest bandwidth"** — high-frequency motor shake with
-  little position motion. Almost always an **overestimated `kS`** (or stiction much higher
-  than the ramp-fit Coulomb term): at low speed `kS · sign(v)` becomes bang-bang. Re-run
-  `AxialFeedforwardTuner` / `LateralFeedforwardTuner` and prefer the ramp fit; if the
-  shake only appears while holding still, you can also lower `kS` slightly (~10–20%) and
-  re-try. Very small `τ = kA/kV` (underestimated `kA`) also inflates the first gains —
-  the pre-start telemetry prints `tau` and the first `posGain` so you can spot this.
-- Lateral tracks curl into an asterisk — open-loop strafe yaw; the soft heading fixture
-  should limit this. If curl is still huge, finish `YawCouplingTuner` first or raise
-  `HOLD_HEADING_POS` slightly for the lateral phase only.
-- **"stalled mid-step"** — robot against a wall or immovable load; clear space and re-run
-  (the tuner aborts instead of thrashing for six iterations).
-- A failed axis keeps whatever gains `Params` already had rather than writing a bad
-  guess; its failure reason is shown in the final telemetry.
+- **Chatter / hesitation at the lowest gain** — feedforward or localization is off;
+  re-check steps 2–7 before raising `START_GAIN`.
+- **Stop-then-lunge before reverse** — gain too high for this chassis; the ladder should
+  back off to the last zero-hesitation clean step. If it still feels high by eye, drop
+  one more manually and paste that.
+- **Heading limp or stranded low** — old runs could soft-edge at 2 with a bad axial
+  companion; heading now starts at 3 with hold 4 and a clean axial first.
+- **Lateral only** — set `TUNE_LATERAL=false` if you only want axial/heading.
+- Tank drive: OpMode refuses; use `ManualFeedbackTuner`.
 
 ### Tank turn-gain sign fix
 
 The stock quickstart's tank `TurnAction` applies `turnGain · (actual − target)` — a sign
 convention under which *positive* gains produce positive feedback. This branch flips it
-to `turnGain · (target − actual)`, matching `HolonomicController`, so the positive gains
-produced by `FeedbackGainTuner` behave correctly. If you previously made tank turns work
-with negative gains, negate them.
+to `turnGain · (target − actual)`, matching `HolonomicController`. If you previously made
+tank turns work with negative gains, negate them.

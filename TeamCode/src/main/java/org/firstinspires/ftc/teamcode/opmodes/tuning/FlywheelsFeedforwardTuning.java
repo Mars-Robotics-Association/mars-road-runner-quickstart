@@ -1,11 +1,8 @@
 package org.firstinspires.ftc.teamcode.opmodes.tuning;
 
 import com.acmerobotics.dashboard.config.Config;
-import com.qualcomm.hardware.lynx.LynxModule;
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
 import com.qualcomm.robotcore.hardware.DcMotorEx;
-
-import org.firstinspires.ftc.robotcore.external.navigation.VoltageUnit;
 
 import java.util.ArrayList;
 
@@ -89,7 +86,6 @@ public class FlywheelsFeedforwardTuning extends FlywheelsTuningBase {
      * @param label display name for telemetry
      * @param powerMotors motors to drive during this pass
      * @param encoder motor to read velocity from
-     * @param module LynxModule for voltage reads
      * @param passIndex 0-based pass number (for telemetry)
      * @param totalPasses total number of passes (for telemetry)
      * @return results, or null if the OpMode is stopped or the motor never starts
@@ -98,7 +94,6 @@ public class FlywheelsFeedforwardTuning extends FlywheelsTuningBase {
             String label,
             DcMotorEx[] powerMotors,
             DcMotorEx encoder,
-            LynxModule module,
             int passIndex,
             int totalPasses)
             throws InterruptedException {
@@ -111,12 +106,13 @@ public class FlywheelsFeedforwardTuning extends FlywheelsTuningBase {
         double power = 0;
         double lastTime = getRuntime();
 
-        while (opModeIsActive()) {
-            bulkReads.readAll();
-
+        while (nextFrame()) {
             double now = getRuntime();
             double dt = now - lastTime;
             lastTime = now;
+            if (dt < 1e-6) {
+                continue;
+            }
 
             power += PARAMS.STICTION_RAMP_RATE * dt;
             if (power > 1.0) power = 1.0;
@@ -129,7 +125,6 @@ public class FlywheelsFeedforwardTuning extends FlywheelsTuningBase {
             telemetry.addData("Phase", "Finding stiction");
             telemetry.addData("Power", "%.4f", power);
             telemetry.addData("Velocity (tps)", "%.1f", velocity);
-            telemetry.update();
 
             if (Math.abs(velocity) > PARAMS.STICTION_THRESHOLD_TPS) {
                 result.stictionPower = power;
@@ -137,49 +132,52 @@ public class FlywheelsFeedforwardTuning extends FlywheelsTuningBase {
             }
 
             if (power >= 1.0) {
-                for (DcMotorEx m : powerMotors) m.setPower(0);
+                if (!isStopRequested()) {
+                    for (DcMotorEx m : powerMotors) m.setPower(0);
+                }
                 telemetry.addData("ERROR", "Motor never started. Check connections.");
-                telemetry.update();
-                while (opModeIsActive()) sleep(100);
+                while (nextFrame()) {
+                    telemetry.addData("ERROR", "Motor never started. Check connections.");
+                }
                 return null;
             }
         }
 
-        if (!opModeIsActive()) return null;
+        if (isStopRequested()) return null;
 
-        result.stictionVoltage = result.stictionPower * module.getInputVoltage(VoltageUnit.VOLTS);
+        result.stictionVoltage = result.stictionPower * batteryVoltage();
 
         // ── Phase 2: step through powers and collect data ────────────────────
         result.avgVelocities = new double[steps];
         result.avgVoltages = new double[steps];
 
-        for (int step = 0; step < steps && opModeIsActive(); step++) {
+        for (int step = 0; step < steps && !isStopRequested(); step++) {
             double stepPower =
                     result.stictionPower + (1.0 - result.stictionPower) * step / (steps - 1);
 
             for (DcMotorEx m : powerMotors) m.setPower(stepPower);
 
-            // settle
+            // settle (deliberate wall-clock wait; live telemetry via nextFrame)
             double settleStart = getRuntime();
-            while (opModeIsActive() && (getRuntime() - settleStart) < PARAMS.SETTLE_TIME_S) {
-                bulkReads.readAll();
+            while (nextFrame() && (getRuntime() - settleStart) < PARAMS.SETTLE_TIME_S) {
                 telemetry.addData("Pass", "%s (%d/%d)", label, passIndex + 1, totalPasses);
                 telemetry.addData("Phase", "Step %d/%d – Settling", step + 1, steps);
                 telemetry.addData("Power", "%.4f", stepPower);
                 telemetry.addData("Velocity (tps)", "%.1f", encoder.getVelocity());
                 telemetry.addData(
                         "Time left", "%.1f s", PARAMS.SETTLE_TIME_S - (getRuntime() - settleStart));
-                telemetry.update();
             }
 
-            // sample
+            if (isStopRequested()) return null;
+
+            // sample (pace between samples for sysid; nextFrame refreshes bulk/battery)
             double totalVel = 0;
             double totalV = 0;
             int samples = Math.max(PARAMS.NUM_SAMPLES, 1);
-            for (int s = 0; s < samples && opModeIsActive(); s++) {
-                bulkReads.readAll();
+            for (int s = 0; s < samples && !isStopRequested(); s++) {
+                if (!nextFrame()) return null;
                 double vel = encoder.getVelocity();
-                double battV = module.getInputVoltage(VoltageUnit.VOLTS);
+                double battV = batteryVoltage();
                 totalVel += vel;
                 totalV += stepPower * battV;
 
@@ -189,7 +187,6 @@ public class FlywheelsFeedforwardTuning extends FlywheelsTuningBase {
                 telemetry.addData("Power", "%.4f", stepPower);
                 telemetry.addData("Velocity (tps)", "%.1f", vel);
                 telemetry.addData("Voltage (V)", "%.3f", stepPower * battV);
-                telemetry.update();
 
                 sleep(20);
             }
@@ -198,7 +195,7 @@ public class FlywheelsFeedforwardTuning extends FlywheelsTuningBase {
             result.avgVoltages[step] = totalV / samples;
         }
 
-        if (!opModeIsActive()) return null;
+        if (isStopRequested()) return null;
 
         for (DcMotorEx m : powerMotors) m.setPower(0);
 
@@ -209,19 +206,20 @@ public class FlywheelsFeedforwardTuning extends FlywheelsTuningBase {
         result.rSquared = fit.rSquared;
 
         // ── Phase 4: step response for kA ────────────────────────────────────
-        double stepVoltage = PARAMS.STEP_RESPONSE_POWER * module.getInputVoltage(VoltageUnit.VOLTS);
+        double stepVoltage = PARAMS.STEP_RESPONSE_POWER * batteryVoltage();
         double wFinal = (stepVoltage - result.kS) / result.kV;
 
         var tauValues = new ArrayList<Double>();
         var stepRSquaredValues = new ArrayList<Double>();
 
         if (wFinal > 0) {
-            for (int trial = 0; trial < PARAMS.STEP_RESPONSE_TRIALS && opModeIsActive(); trial++) {
+            for (int trial = 0;
+                    trial < PARAMS.STEP_RESPONSE_TRIALS && !isStopRequested();
+                    trial++) {
                 // Coast to stop
                 for (DcMotorEx m : powerMotors) m.setPower(0);
                 double coastStart = getRuntime();
-                while (opModeIsActive()) {
-                    bulkReads.readAll();
+                while (nextFrame()) {
                     double vel = Math.abs(encoder.getVelocity());
                     telemetry.addData("Pass", "%s (%d/%d)", label, passIndex + 1, totalPasses);
                     telemetry.addData(
@@ -230,12 +228,11 @@ public class FlywheelsFeedforwardTuning extends FlywheelsTuningBase {
                             trial + 1,
                             PARAMS.STEP_RESPONSE_TRIALS);
                     telemetry.addData("Velocity (tps)", "%.1f", vel);
-                    telemetry.update();
                     if (vel < PARAMS.COAST_STOP_THRESHOLD_TPS) break;
                     if (getRuntime() - coastStart > PARAMS.COAST_TIMEOUT_S) break;
                     sleep(10);
                 }
-                if (!opModeIsActive()) break;
+                if (isStopRequested()) break;
                 sleep(200); // brief pause at rest
 
                 // Apply step and sample
@@ -244,9 +241,8 @@ public class FlywheelsFeedforwardTuning extends FlywheelsTuningBase {
                 double stepStart = getRuntime();
                 for (DcMotorEx m : powerMotors) m.setPower(PARAMS.STEP_RESPONSE_POWER);
 
-                while (opModeIsActive()
+                while (nextFrame()
                         && (getRuntime() - stepStart) < PARAMS.STEP_RESPONSE_MAX_TIME_S) {
-                    bulkReads.readAll();
                     double t = getRuntime() - stepStart;
                     double vel = encoder.getVelocity();
                     sampleTimes.add(t);
@@ -261,12 +257,10 @@ public class FlywheelsFeedforwardTuning extends FlywheelsTuningBase {
                     telemetry.addData("Time", "%.3f s", t);
                     telemetry.addData("Velocity (tps)", "%.1f", vel);
                     telemetry.addData("w_final (tps)", "%.1f", wFinal);
-                    telemetry.update();
                 }
 
-                if (opModeIsActive()) {
-                    for (DcMotorEx m : powerMotors) m.setPower(0);
-                }
+                if (isStopRequested()) break;
+                for (DcMotorEx m : powerMotors) m.setPower(0);
 
                 // Linearized regression: ln(1 - w/w_final) = -t/tau
                 var regT = new ArrayList<Double>();
@@ -321,7 +315,7 @@ public class FlywheelsFeedforwardTuning extends FlywheelsTuningBase {
         int numPasses = HARDWARE.MOTORS_COUPLED ? 1 : motors.length;
         var results = new TuneResult[numPasses];
 
-        for (int pass = 0; pass < numPasses && opModeIsActive(); pass++) {
+        for (int pass = 0; pass < numPasses && !isStopRequested(); pass++) {
             String label;
             DcMotorEx[] powerMotors;
             DcMotorEx encoder;
@@ -336,7 +330,7 @@ public class FlywheelsFeedforwardTuning extends FlywheelsTuningBase {
                 encoder = motors[pass];
             }
 
-            results[pass] = runTuningPass(label, powerMotors, encoder, module, pass, numPasses);
+            results[pass] = runTuningPass(label, powerMotors, encoder, pass, numPasses);
             if (results[pass] == null) return;
         }
 

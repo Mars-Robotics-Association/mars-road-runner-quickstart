@@ -31,7 +31,7 @@ constraint (adapts path velocity to available headroom), and a centripetal accel
 Tuning is largely automated: on-robot sysid OpModes identify the feedforward constants
 (`AxialFeedforwardTuner`, `LateralFeedforwardTuner`, `YawCouplingTuner`), `TrackWidthTuner`
 corrects the effective track width (the only way to measure it on Pinpoint/OTOS setups),
-and `FeedbackGainTuner` finds the follower feedback gains by automated bump tests. See the
+and `PathFeedbackGainTuner` finds the follower feedback gains on long path legs. See the
 [automated tuning flow](docs/tuning.md) for the recommended procedure, the
 [plant model and identification theory](docs/tuning-theory.md) for the physics and strategy
 behind those numbers, and the

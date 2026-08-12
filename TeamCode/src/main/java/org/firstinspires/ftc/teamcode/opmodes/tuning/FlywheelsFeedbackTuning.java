@@ -3,6 +3,7 @@ package org.firstinspires.ftc.teamcode.opmodes.tuning;
 import com.acmerobotics.dashboard.config.Config;
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
 import com.qualcomm.robotcore.hardware.DcMotorEx;
+import com.qualcomm.robotcore.util.Range;
 
 /**
  * Interactive tuning opmode for flywheel kP and IIR low-pass filter alpha values.
@@ -84,7 +85,9 @@ public class FlywheelsFeedbackTuning extends FlywheelsTuningBase {
                 double feedforward = kS + kV * smoothedTarget;
                 double feedback = PARAMS.kP * (smoothedTarget - smoothedVelocity);
                 double voltage = feedforward + feedback;
-                activeMotor.setPower(voltage / batteryVoltage());
+                double battV = batteryVoltage();
+                // Match ArmSysId: reject near-zero ADC so power is never Inf/NaN.
+                activeMotor.setPower(battV > 0.5 ? Range.clip(voltage / battV, -1.0, 1.0) : 0.0);
             }
 
             telemetry.addData("Motor", PARAMS.useLeftMotor ? "Left" : "Right");

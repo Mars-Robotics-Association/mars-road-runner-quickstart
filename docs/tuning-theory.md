@@ -59,9 +59,10 @@ You do **not** “prefer a higher $k_V$.” You run the experiment, read the fit
 number in the code. If the fit looks wrong, fix the **experiment** (encoder sign, wall
 hits in the data, units) — don’t invent a prettier constant.
 
-Gains *are* a choice (“how snappy do we want the loop?”), but even they are mostly
-**computed from the plant** once you pick a target “how fast should the loop respond?”
-The automated gain OpMode searches **one** knob (bandwidth), not six random numbers.
+Gains *are* a choice (“how snappy do we want the loop?”). Plant $\tau$ still explains
+why a sane range exists, but the automated gain OpMode (`PathFeedbackGainTuner`) does
+what you do by eye: ladder position gains on long paths and back off at chatter /
+stop-then-lunge — not a free search over six unrelated numbers.
 
 ---
 
@@ -131,16 +132,18 @@ $$
 drag / back-EMF.)
 
 If you pick a desired response speed $\omega_n$ (bandwidth) and damping $\zeta$, you can
-**compute** position and velocity gains instead of guessing:
+**compute** position and velocity gains instead of pure guesswork:
 
 $$
 k_p = \omega_n^2 \cdot \tau, \qquad
 k_d = \max(0,\; 2\zeta\omega_n\tau - 1).
 $$
 
-You don’t need to memorize these formulas to drive. The takeaway is: **$k_S$, $k_V$,
-$k_A$ are not “only for feedforward.”** They also make gain selection scientific instead
-of folklore.
+In practice `PathFeedbackGainTuner` ladders $k_p$ on real trajectories (with $k_d$ usually
+left at 0) and scores how the chassis behaves. The formulas still explain the plant; the
+OpMode answers “how high can we go before it feels wrong?” You don’t need to memorize
+them to drive. The takeaway is: **$k_S$, $k_V$, $k_A$ are not “only for feedforward.”**
+They make the leftover plant small enough that a short gain ladder is enough.
 
 ---
 
@@ -286,9 +289,9 @@ $$
 
 ### Gains
 
-$\tau = k_A / k_V$ tells the gain calculator how “sluggish” the leftover plant is.
-`FeedbackGainTuner` will not run without positive $k_V$ and $k_A$ — without $\tau$ it
-has no model to design against.
+$\tau = k_A / k_V$ characterizes how “sluggish” the leftover plant is after feedforward.
+`PathFeedbackGainTuner` still requires positive $k_V$ and $k_A$ (sane feedforward) before
+it will ladder path gains on real trajectories.
 
 ---
 
@@ -306,14 +309,14 @@ random checklist.
 | 5 | Effective track width | Spin test *uses* the plant; measures turn geometry |
 | 6 | Lateral plant (mecanum) | Strafe has **different friction** (and slightly different $k_V$/$k_A$) than forward |
 | 7 | Yaw coupling | Sideways curl while going straight; uses $k_V$ and track |
-| 8 | Feedback gains | Built from $\tau$; tested with full feedforward on |
+| 8 | Feedback gains | Ladder on long paths with full feedforward on |
 | 9 | Verification | Human check: does the whole stack feel right? |
 
 **Common traps:**
 
 - Track-width spin needs feedforward first (especially $k_V$).
 - Yaw-coupling math uses $k_V$ and track width.
-- Gain synthesis needs $k_A / k_V$.
+- Path gain ladder needs a sane feedforward ($k_V$, $k_A$ positive) first.
 - Voltage path limits need real positive $k_V$ and $k_A$.
 
 **Chaining OpModes.** Successful automatic fits write into live `PARAMS` for the rest of
@@ -367,8 +370,8 @@ sign or scaling is wrong; fix the model.
 
 - With solid feedforward, verification OpModes should track without heroic gains.
 - Huge gains fighting lag $\rightarrow$ recheck $k_S$ and localization first.
-- Oscillation even at the lowest bandwidth $\rightarrow$ often noisy or laggy pose, not
-  “more kP will help.”
+- Oscillation / thrash even at the lowest ladder step $\rightarrow$ often noisy or laggy
+  pose or bad $k_S$, not “more kP will help.”
 
 **When something fails, ask in this order:**
 
@@ -380,8 +383,8 @@ sign or scaling is wrong; fix the model.
 
 ## 8. Takeaways
 
-1. **$k_S$, $k_V$, $k_A$ are a plant model** — for feedforward, path limits, and gain
-   math. Measure them; don’t “tune for snappy.”
+1. **$k_S$, $k_V$, $k_A$ are a plant model** — for feedforward, path limits, and a small
+   leftover plant for gains. Measure them; don’t “tune for snappy.”
 2. **Geometry first.** A perfect fit on inverted encoders is still wrong.
 3. **Feedforward first, feedback second.** Gains hide a bad model only until paths get
    aggressive.

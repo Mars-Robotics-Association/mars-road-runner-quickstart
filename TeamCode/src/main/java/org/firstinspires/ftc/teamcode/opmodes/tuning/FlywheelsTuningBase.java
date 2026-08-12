@@ -1,13 +1,10 @@
 package org.firstinspires.ftc.teamcode.opmodes.tuning;
 
 import com.acmerobotics.dashboard.config.Config;
-import com.qualcomm.hardware.lynx.LynxModule;
 import com.qualcomm.robotcore.hardware.DcMotorEx;
 import com.qualcomm.robotcore.hardware.DcMotorSimple;
 
 import org.firstinspires.ftc.teamcode.opmodes.base.MarsLinearOpMode;
-import org.firstinspires.ftc.teamcode.robot.BulkReads;
-import org.firstinspires.ftc.teamcode.utils.HubHelper;
 
 @Config
 public abstract class FlywheelsTuningBase extends MarsLinearOpMode {
@@ -22,14 +19,9 @@ public abstract class FlywheelsTuningBase extends MarsLinearOpMode {
     public static HardwareConfig HARDWARE = new HardwareConfig();
 
     protected DcMotorEx[] motors;
-    protected LynxModule module;
-
-    /** Same instance as {@link #bulk}; kept for existing subclass call sites. */
-    protected BulkReads bulkReads;
 
     protected void initHardware() {
         initRobot();
-        bulkReads = bulk;
 
         motors = new DcMotorEx[HARDWARE.MOTOR_NAMES.length];
         for (int i = 0; i < HARDWARE.MOTOR_NAMES.length; i++) {
@@ -38,8 +30,6 @@ public abstract class FlywheelsTuningBase extends MarsLinearOpMode {
             motors[i].setDirection(HARDWARE.MOTOR_DIRECTIONS[i]);
             motors[i].setZeroPowerBehavior(DcMotorEx.ZeroPowerBehavior.FLOAT);
         }
-
-        module = HubHelper.getHubForMotor(motors[0], hardwareMap);
     }
 
     public void stopMotors() {

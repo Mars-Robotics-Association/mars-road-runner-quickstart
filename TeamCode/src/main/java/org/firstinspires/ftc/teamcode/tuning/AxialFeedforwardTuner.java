@@ -3,7 +3,6 @@ package org.firstinspires.ftc.teamcode.tuning;
 import com.acmerobotics.dashboard.config.Config;
 import com.acmerobotics.roadrunner.Pose2d;
 import com.qualcomm.robotcore.hardware.DcMotorEx;
-import com.qualcomm.robotcore.hardware.VoltageSensor;
 
 import org.firstinspires.ftc.teamcode.MecanumDrive;
 import org.firstinspires.ftc.teamcode.TankDrive;
@@ -125,13 +124,13 @@ public final class AxialFeedforwardTuner extends MarsLinearOpMode {
         DoubleConsumer setPower;
         DoubleSupplier forwardVel; // signed chassis forward velocity, in/s, from the localizer
         DoubleSupplier axisPos; // forward position (in); read after forwardVel updates localizer
-        VoltageSensor voltageSensor;
         double inPerTick;
         String driveName;
 
         if (TuningOpModes.DRIVE_CLASS.equals(MecanumDrive.class)) {
             MecanumDrive drive =
-                    new MecanumDrive(hardwareMap, new Pose2d(0, 0, 0), this::batteryVoltage);
+                    MecanumDrive.forMarsLinear(
+                            hardwareMap, new Pose2d(0, 0, 0), this::batteryVoltage);
             setPower =
                     p -> {
                         drive.leftFront.setPower(p);
@@ -141,11 +140,11 @@ public final class AxialFeedforwardTuner extends MarsLinearOpMode {
                     };
             forwardVel = () -> drive.localizer.update().linearVel.x;
             axisPos = () -> drive.localizer.getPose().position.x;
-            voltageSensor = drive.voltageSensor;
             inPerTick = MecanumDrive.PARAMS.inPerTick;
             driveName = "MecanumDrive";
         } else if (TuningOpModes.DRIVE_CLASS.equals(TankDrive.class)) {
-            TankDrive drive = new TankDrive(hardwareMap, new Pose2d(0, 0, 0), this::batteryVoltage);
+            TankDrive drive =
+                    TankDrive.forMarsLinear(hardwareMap, new Pose2d(0, 0, 0), this::batteryVoltage);
             List<DcMotorEx> allMotors = new ArrayList<>(drive.leftMotors);
             allMotors.addAll(drive.rightMotors);
             setPower =
@@ -156,7 +155,6 @@ public final class AxialFeedforwardTuner extends MarsLinearOpMode {
                     };
             forwardVel = () -> drive.localizer.update().linearVel.x;
             axisPos = () -> drive.localizer.getPose().position.x;
-            voltageSensor = drive.voltageSensor;
             inPerTick = TankDrive.PARAMS.inPerTick;
             driveName = "TankDrive";
         } else {
@@ -229,7 +227,6 @@ public final class AxialFeedforwardTuner extends MarsLinearOpMode {
                         setPower,
                         forwardVel,
                         axisPos,
-                        voltageSensor,
                         inPerTick,
                         RAMP_POWER_PER_SEC,
                         RAMP_MAX,

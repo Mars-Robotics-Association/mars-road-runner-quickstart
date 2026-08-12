@@ -1,6 +1,5 @@
 package org.firstinspires.ftc.teamcode.tuning;
 
-import com.qualcomm.robotcore.hardware.VoltageSensor;
 import com.qualcomm.robotcore.util.ElapsedTime;
 
 import org.firstinspires.ftc.robotcore.external.Telemetry;
@@ -62,9 +61,7 @@ public final class ReversalFeedforwardId {
                 + "min_ramp_ticks_per_sec,end_margin_in,min_travel_in,arm_travel_in,pos_stall_speed,"
                 + "ka_window_s,ka_stride_s";
 
-    /**
-     * Flush buffered sample rows after this many are queued (matches {@code FeedbackGainTuner}).
-     */
+    /** Flush buffered sample rows after this many are queued. */
     public static final int LOG_FLUSH_EVERY = 256;
 
     /** Window length (s) for residual kA integral equations. */
@@ -185,7 +182,6 @@ public final class ReversalFeedforwardId {
             DoubleConsumer setPower,
             DoubleSupplier wheelVel,
             DoubleSupplier axisPos,
-            VoltageSensor voltageSensor,
             double inPerTick,
             double rampPowerPerSec,
             double rampMax,
@@ -207,7 +203,6 @@ public final class ReversalFeedforwardId {
                 setPower,
                 wheelVel,
                 axisPos,
-                voltageSensor,
                 inPerTick,
                 rampPowerPerSec,
                 rampMax,
@@ -234,7 +229,6 @@ public final class ReversalFeedforwardId {
             DoubleConsumer setPower,
             DoubleSupplier wheelVel,
             DoubleSupplier axisPos,
-            VoltageSensor voltageSensor,
             double inPerTick,
             double rampPowerPerSec,
             double rampMax,
@@ -258,7 +252,6 @@ public final class ReversalFeedforwardId {
                 setPower,
                 wheelVel,
                 axisPos,
-                voltageSensor,
                 inPerTick,
                 rampPowerPerSec,
                 rampMax,
@@ -290,7 +283,6 @@ public final class ReversalFeedforwardId {
             DoubleConsumer setPower,
             DoubleSupplier wheelVel,
             DoubleSupplier axisPos,
-            VoltageSensor voltageSensor,
             double inPerTick,
             double rampPowerPerSec,
             double rampMax,
@@ -486,7 +478,6 @@ public final class ReversalFeedforwardId {
                     wheelVel,
                     axisPos,
                     sBox,
-                    voltageSensor,
                     revT,
                     revV,
                     revVel,
@@ -507,7 +498,6 @@ public final class ReversalFeedforwardId {
                     setPower,
                     wheelVel,
                     axisPos,
-                    voltageSensor,
                     revT,
                     revV,
                     revVel,
@@ -637,7 +627,6 @@ public final class ReversalFeedforwardId {
             DoubleConsumer setPower,
             DoubleSupplier wheelVel,
             DoubleSupplier axisPos,
-            VoltageSensor voltageSensor,
             List<Double> revT,
             List<Double> revV,
             List<Double> revVel,
@@ -686,7 +675,6 @@ public final class ReversalFeedforwardId {
             DoubleSupplier wheelVel,
             DoubleSupplier axisPos,
             double[] sBox,
-            VoltageSensor voltageSensor,
             List<Double> revT,
             List<Double> revV,
             List<Double> revVel,

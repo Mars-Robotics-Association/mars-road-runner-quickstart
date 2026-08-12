@@ -1,7 +1,6 @@
 package org.firstinspires.ftc.teamcode.tuning;
 
 import com.acmerobotics.dashboard.config.Config;
-import com.acmerobotics.dashboard.telemetry.MultipleTelemetry;
 import com.acmerobotics.roadrunner.DualNum;
 import com.acmerobotics.roadrunner.Pose2d;
 import com.acmerobotics.roadrunner.PoseVelocity2dDual;
@@ -11,6 +10,7 @@ import com.acmerobotics.roadrunner.Vector2dDual;
 import com.qualcomm.robotcore.hardware.IMU;
 import com.qualcomm.robotcore.util.ElapsedTime;
 
+import org.firstinspires.ftc.robotcore.external.Telemetry;
 import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
 import org.firstinspires.ftc.robotcore.external.navigation.AngularVelocity;
 import org.firstinspires.ftc.robotcore.external.navigation.UnnormalizedAngleUnit;
@@ -86,7 +86,9 @@ public final class TrackWidthTuner extends MarsLinearOpMode {
     @Override
     public void runOpMode() throws InterruptedException {
         initRobot();
-        MultipleTelemetry telem = (MultipleTelemetry) telemetry;
+        // MarsLinearOpMode already wraps DS + Dashboard in GatedTelemetry — use Telemetry, do not
+        // cast to MultipleTelemetry.
+        Telemetry telem = telemetry;
 
         Consumer<PoseVelocity2dDual<Time>> setCommand;
         IMU imu;
@@ -103,7 +105,8 @@ public final class TrackWidthTuner extends MarsLinearOpMode {
                             MecanumDrive.PARAMS.trackWidthTicks, MecanumDrive.PARAMS.inPerTick);
             MecanumDrive.PARAMS.trackWidthTicks = trackWidthTicks;
             MecanumDrive drive =
-                    new MecanumDrive(hardwareMap, new Pose2d(0, 0, 0), this::batteryVoltage);
+                    MecanumDrive.forMarsLinear(
+                            hardwareMap, new Pose2d(0, 0, 0), this::batteryVoltage);
             setCommand = drive::setDriveCommand;
             imu = drive.lazyImu.get();
             localizer = drive.localizer;
@@ -115,7 +118,8 @@ public final class TrackWidthTuner extends MarsLinearOpMode {
                     resolveTrackWidthTicks(
                             TankDrive.PARAMS.trackWidthTicks, TankDrive.PARAMS.inPerTick);
             TankDrive.PARAMS.trackWidthTicks = trackWidthTicks;
-            TankDrive drive = new TankDrive(hardwareMap, new Pose2d(0, 0, 0), this::batteryVoltage);
+            TankDrive drive =
+                    TankDrive.forMarsLinear(hardwareMap, new Pose2d(0, 0, 0), this::batteryVoltage);
             setCommand = drive::setDriveCommand;
             imu = drive.lazyImu.get();
             localizer = drive.localizer;
@@ -286,7 +290,7 @@ public final class TrackWidthTuner extends MarsLinearOpMode {
             IMU imu,
             DoubleSupplier pinpointRate,
             int dir,
-            MultipleTelemetry telemetry,
+            Telemetry telemetry,
             String label) {
         List<RawSample> samples = new ArrayList<>();
         double alpha = dir * MAX_ANG_VEL / RAMP_TIME;

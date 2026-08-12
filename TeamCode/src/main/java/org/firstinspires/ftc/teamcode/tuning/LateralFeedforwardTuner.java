@@ -135,7 +135,7 @@ public final class LateralFeedforwardTuner extends MarsLinearOpMode {
 
         initRobot();
         MecanumDrive drive =
-                new MecanumDrive(hardwareMap, new Pose2d(0, 0, 0), this::batteryVoltage);
+                MecanumDrive.forMarsLinear(hardwareMap, new Pose2d(0, 0, 0), this::batteryVoltage);
         double inPerTick = MecanumDrive.PARAMS.inPerTick;
         double lateralMultiplier = drive.kinematics.lateralMultiplier;
 
@@ -231,7 +231,7 @@ public final class LateralFeedforwardTuner extends MarsLinearOpMode {
         DoubleSupplier wheelVel = () -> drive.localizer.update().linearVel.y * lateralMultiplier;
         DoubleSupplier axisPos = () -> drive.localizer.getPose().position.y;
 
-        // identify() runs its own opModeIsActive loops (not nextFrame) — intentional for sysid.
+        // identify() advances samples via nextFrame under MANUAL bulk.
         ReversalFeedforwardId.Result fit =
                 ReversalFeedforwardId.identify(
                         this,
@@ -239,7 +239,6 @@ public final class LateralFeedforwardTuner extends MarsLinearOpMode {
                         setPower,
                         wheelVel,
                         axisPos,
-                        drive.voltageSensor,
                         inPerTick,
                         RAMP_POWER_PER_SEC,
                         RAMP_MAX,

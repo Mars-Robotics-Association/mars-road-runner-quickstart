@@ -1,14 +1,10 @@
 package org.firstinspires.ftc.teamcode.opmodes.tuning;
 
 import com.acmerobotics.dashboard.config.Config;
-import com.qualcomm.hardware.lynx.LynxModule;
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
 import com.qualcomm.robotcore.hardware.DcMotorEx;
 
-import org.firstinspires.ftc.robotcore.external.navigation.VoltageUnit;
 import org.firstinspires.ftc.teamcode.opmodes.base.MarsLinearOpMode;
-import org.firstinspires.ftc.teamcode.robot.BulkReads;
-import org.firstinspires.ftc.teamcode.utils.HubHelper;
 
 import java.util.ArrayList;
 
@@ -93,19 +89,15 @@ public class ArmFeedforwardTuning extends MarsLinearOpMode {
     private double qsSumY = 0;
     private double qsSumY2 = 0;
     private int qsN = 0;
-    private BulkReads bulkReads;
 
     @Override
     public void runOpMode() throws InterruptedException {
         initRobot();
-        bulkReads = bulk;
 
         // ── Hardware init ────────────────────────────────────────────────────
         DcMotorEx motor = hardwareMap.get(DcMotorEx.class, PARAMS.MOTOR_NAME);
         motor.setMode(DcMotorEx.RunMode.RUN_WITHOUT_ENCODER);
         motor.setZeroPowerBehavior(DcMotorEx.ZeroPowerBehavior.BRAKE);
-
-        LynxModule hub = HubHelper.getHubForMotor(motor, hardwareMap);
 
         double ticksToRad = 2.0 * Math.PI / PARAMS.TICKS_PER_ARM_REV;
 
@@ -120,12 +112,12 @@ public class ArmFeedforwardTuning extends MarsLinearOpMode {
                 "Phase 1/5 – Move arm to one end of range, then press A to begin forward sweep."))
             return;
 
+        // waitForA ends on a nextFrame (fresh bulk); position after operator move is current.
         int tickOffset = motor.getCurrentPosition();
         int samples1 =
-                runQuasistaticSweep(
-                        motor, hub, ticksToRad, tickOffset, true, "1/5 – Forward sweep");
+                runQuasistaticSweep(motor, ticksToRad, tickOffset, true, "1/5 – Forward sweep");
+        if (isStopRequested()) return;
         motor.setPower(0);
-        if (!opModeIsActive()) return;
 
         // ── Phase 2: Quasistatic backward sweep ──────────────────────────────
         if (!waitForA(
@@ -135,10 +127,9 @@ public class ArmFeedforwardTuning extends MarsLinearOpMode {
                         samples1))) return;
 
         int samples2 =
-                runQuasistaticSweep(
-                        motor, hub, ticksToRad, tickOffset, false, "2/5 – Reverse sweep");
+                runQuasistaticSweep(motor, ticksToRad, tickOffset, false, "2/5 – Reverse sweep");
+        if (isStopRequested()) return;
         motor.setPower(0);
-        if (!opModeIsActive()) return;
 
         // ── Phase 3: OLS regression ──────────────────────────────────────────
         double kS = 0, c1 = 0, c2 = 0, kV = 0;
@@ -177,12 +168,11 @@ public class ArmFeedforwardTuning extends MarsLinearOpMode {
         var stepR2List = new ArrayList<Double>();
 
         if (beta != null && kV > 0) {
-            for (int trial = 0; trial < PARAMS.STEP_TRIALS && opModeIsActive(); trial++) {
+            for (int trial = 0; trial < PARAMS.STEP_TRIALS && !isStopRequested(); trial++) {
                 // Coast to rest
                 motor.setPower(0);
                 double coastStart = getRuntime();
-                while (opModeIsActive()) {
-                    bulkReads.readAll();
+                while (nextFrame()) {
                     double velTps = Math.abs(motor.getVelocity());
                     telemetry.addData(
                             "Phase",
@@ -190,11 +180,10 @@ public class ArmFeedforwardTuning extends MarsLinearOpMode {
                             trial + 1,
                             PARAMS.STEP_TRIALS);
                     telemetry.addData("Velocity (tps)", "%.1f", velTps);
-                    telemetry.update();
                     if (velTps < PARAMS.COAST_THRESHOLD_TPS) break;
                     if (getRuntime() - coastStart > PARAMS.COAST_TIMEOUT_S) break;
                 }
-                if (!opModeIsActive()) break;
+                if (isStopRequested()) break;
 
                 // Prompt user to position arm near vertical (gravity ≈ 0 → best kA accuracy).
                 if (!waitForA(
@@ -203,9 +192,9 @@ public class ArmFeedforwardTuning extends MarsLinearOpMode {
                                         + " A.",
                                 trial + 1, PARAMS.STEP_TRIALS))) return;
 
-                // Snapshot angle and battery voltage at step start.
+                // Snapshot after waitForA's nextFrame (fresh bulk + battery epoch).
                 double theta0 = (motor.getCurrentPosition() - tickOffset) * ticksToRad;
-                double battV0 = hub.getInputVoltage(VoltageUnit.VOLTS);
+                double battV0 = batteryVoltage();
 
                 // Gravity-subtracted net voltage and predicted terminal velocity.
                 double vNet =
@@ -220,7 +209,6 @@ public class ArmFeedforwardTuning extends MarsLinearOpMode {
                             "Trial %d/%d – wInf ≤ 0 (arm orientation problem). Skipping.",
                             trial + 1,
                             PARAMS.STEP_TRIALS);
-                    telemetry.update();
                     continue;
                 }
 
@@ -231,8 +219,7 @@ public class ArmFeedforwardTuning extends MarsLinearOpMode {
                 double stepStart = getRuntime();
                 motor.setPower(PARAMS.STEP_FRACTION);
 
-                while (opModeIsActive() && (getRuntime() - stepStart) < PARAMS.STEP_MAX_TIME_S) {
-                    bulkReads.readAll();
+                while (nextFrame() && (getRuntime() - stepStart) < PARAMS.STEP_MAX_TIME_S) {
                     double t = getRuntime() - stepStart;
                     double omega = motor.getVelocity() * ticksToRad;
                     sampleT.add(t);
@@ -246,8 +233,8 @@ public class ArmFeedforwardTuning extends MarsLinearOpMode {
                     telemetry.addData("Time", "%.3f s", t);
                     telemetry.addData("ω (rad/s)", "%.3f", omega);
                     telemetry.addData("ω_∞ (rad/s)", "%.3f", wInf);
-                    telemetry.update();
                 }
+                if (isStopRequested()) break;
                 motor.setPower(0);
 
                 // Linearized fit: ln(1 − ω/ω_∞) vs t → slope = −1/τ.
@@ -278,7 +265,9 @@ public class ArmFeedforwardTuning extends MarsLinearOpMode {
             }
         }
 
-        motor.setPower(0);
+        if (!isStopRequested()) {
+            motor.setPower(0);
+        }
 
         // Average τ across valid trials → kA.
         int validTrials = tauList.size();
@@ -344,21 +333,19 @@ public class ArmFeedforwardTuning extends MarsLinearOpMode {
      */
     private int runQuasistaticSweep(
             DcMotorEx motor,
-            LynxModule hub,
             double ticksToRad,
             int tickOffset,
             boolean forward,
             String phaseLabel) {
         int count = 0;
         double power = 0;
-        double lastTime = getRuntime();
 
-        while (opModeIsActive()) {
-            bulkReads.readAll();
-
-            double now = getRuntime();
-            double dt = now - lastTime;
-            lastTime = now;
+        while (nextFrame()) {
+            double dt = loopDt();
+            if (!(dt > 1e-6) || dt > 0.5) {
+                // NaN before second advance, duplicate frame, or long gap after a wait.
+                continue;
+            }
 
             power += (forward ? 1.0 : -1.0) * PARAMS.QUASISTATIC_RAMP * dt;
             power = Math.max(-1.0, Math.min(1.0, power));
@@ -367,7 +354,7 @@ public class ArmFeedforwardTuning extends MarsLinearOpMode {
             int ticks = motor.getCurrentPosition();
             double theta = (ticks - tickOffset) * ticksToRad;
             double omega = motor.getVelocity() * ticksToRad;
-            double battV = hub.getInputVoltage(VoltageUnit.VOLTS);
+            double battV = batteryVoltage();
             double vApplied = power * battV;
 
             if (Math.abs(omega) > PARAMS.MIN_VELOCITY_RAD) {
@@ -381,7 +368,6 @@ public class ArmFeedforwardTuning extends MarsLinearOpMode {
             telemetry.addData("ω (rad/s)", "%.3f", omega);
             telemetry.addData("V applied (V)", "%.3f", vApplied);
             telemetry.addData("Samples", count);
-            telemetry.update();
 
             int relTicks = ticks - tickOffset;
             if (forward && relTicks >= PARAMS.SOFT_LIMIT_FWD) break;
@@ -406,12 +392,17 @@ public class ArmFeedforwardTuning extends MarsLinearOpMode {
 
     // ── Gamepad-A waiter ─────────────────────────────────────────────────────
 
-    /** Loops showing {@code message} until the A button is pressed (rising edge). */
+    /**
+     * Loops showing {@code message} until the A button is pressed (rising edge). Uses {@link
+     * #nextFrame()} so bulk is fresh on the frame that returns — safe to read encoders immediately
+     * after (operator may have moved the arm during the wait).
+     */
     private boolean waitForA(String message) {
-        while (opModeIsActive()) {
-            if (gamepad1.aWasPressed()) return true;
+        while (nextFrame()) {
             telemetry.addData("Waiting", message);
-            telemetry.update();
+            if (gamepad1.aWasPressed()) {
+                return true;
+            }
         }
         return false;
     }
