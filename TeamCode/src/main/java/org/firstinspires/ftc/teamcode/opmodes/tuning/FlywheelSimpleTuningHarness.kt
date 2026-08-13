@@ -72,7 +72,7 @@ class FlywheelSimpleTuningHarness : MarsLinearOpMode() {
 
             flywheel.writeTelemetry()
             telemetry.addData("Spinning", spinning)
-            telemetry.addData("isPowerTooLow", flywheel.isPowerTooLowForTargetVelocity)
+            telemetry.addData("isPowerTooLow", flywheel.isPowerTooLowForTargetVelocity())
         }
     }
 }

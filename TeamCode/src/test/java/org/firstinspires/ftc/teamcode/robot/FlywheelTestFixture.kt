@@ -35,15 +35,17 @@ internal object FlywheelTestFixture {
     class SimMotorAdapter(private val sim: FlywheelMotorSim) : EncapsulatedDcMotorEx(null) {
         var lastPower = 0.0
 
-        override fun getVelocity(): Double = sim.velocityTps
+        override val encoderVelocity: Double
+            get() = sim.getVelocityTps()
 
-        override fun getCurrentPosition(): Int = sim.positionTicks
+        override fun getCurrentPosition(): Int = sim.getPositionTicks()
 
         override fun setPower(power: Double) {
             lastPower = power
         }
 
-        override fun getHubVoltage(): Double = HUB_VOLTAGE
+        override val hubVoltage: Double
+            get() = HUB_VOLTAGE
     }
 
     /**

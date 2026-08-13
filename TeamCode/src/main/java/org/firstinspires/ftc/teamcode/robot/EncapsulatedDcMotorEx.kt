@@ -43,27 +43,28 @@ open class EncapsulatedDcMotorEx : DcMotorEx, IMotor {
         return motor ?: throw UnsupportedOperationException("motor not available on this stub")
     }
 
-    override fun getName(): String {
-        val m = this.motor
-        if (m is IMotor) {
-            return m.name
+    override val name: String
+        get() {
+            val m = this.motor
+            if (m is IMotor) {
+                return m.name
+            }
+            // deviceName is null for test stubs constructed without HardwareMap.
+            return deviceName ?: "stub"
         }
-        // deviceName is null for test stubs constructed without HardwareMap.
-        return deviceName ?: "stub"
-    }
 
-    override fun getPosition(): Int {
-        return requireMotor().currentPosition
-    }
+    override val position: Int
+        get() = currentPosition
 
-    override fun getHubVoltage(): Double {
-        val hub =
-            this.hub
-                ?: throw UnsupportedOperationException(
-                    "getHubVoltage() requires construction from HardwareMap"
-                )
-        return hub.getInputVoltage(VoltageUnit.VOLTS)
-    }
+    override val hubVoltage: Double
+        get() {
+            val hub =
+                this.hub
+                    ?: throw UnsupportedOperationException(
+                        "hubVoltage requires construction from HardwareMap"
+                    )
+            return hub.getInputVoltage(VoltageUnit.VOLTS)
+        }
 
     /**
      * Individually energizes this particular motor
@@ -115,14 +116,10 @@ open class EncapsulatedDcMotorEx : DcMotorEx, IMotor {
         requireMotor().setVelocity(angularRate, unit)
     }
 
-    /**
-     * Returns the current velocity of the motor, in ticks per second
-     *
-     * @return the current velocity of the motor
-     */
-    override fun getVelocity(): Double {
-        return requireMotor().velocity
-    }
+    override val encoderVelocity: Double
+        get() = requireMotor().velocity
+
+    override fun getVelocity(): Double = encoderVelocity
 
     /**
      * Returns the current velocity of the motor, in angular units per second

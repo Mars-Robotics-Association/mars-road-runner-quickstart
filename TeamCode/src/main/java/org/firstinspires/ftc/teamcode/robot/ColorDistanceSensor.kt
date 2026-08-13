@@ -90,7 +90,7 @@ class ColorDistanceSensor(revV3: Boolean, hardwareMap: HardwareMap, name: String
 
         @JvmStatic
         fun hueToColorName(hue: Float): String {
-            return colorNames.getClosest(hue)
+            return colorNames.getClosest(hue) ?: ""
         }
     }
 }

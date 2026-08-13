@@ -4,6 +4,12 @@ pluginManagement {
         mavenCentral()
         gradlePluginPortal()
     }
+    plugins {
+        // ControlLib / ControlLab apply org.jetbrains.kotlin.jvm without a version.
+        // 2.2.20: Gradle 9.1 and kotlinx-coroutines 1.11.0.
+        id 'org.jetbrains.kotlin.jvm' version '2.2.20'
+        id 'org.jetbrains.kotlin.android' version '2.2.20'
+    }
 }
 
 include ':FtcRobotController'

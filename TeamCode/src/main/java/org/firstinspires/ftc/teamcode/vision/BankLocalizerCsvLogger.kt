@@ -56,13 +56,14 @@ class BankLocalizerCsvLogger(filePrefix: String) : AutoCloseable {
         val bank: PoseHypothesisBank = core.bank()
         val frame: VisionFrame = core.lastFrame() ?: VisionFrame()
         val src: VisionSource = loc.visionSource()
-        val cam = doubleArrayOf(src.calFx, src.calFy, src.calCx, src.calCy)
+        val cam = doubleArrayOf(src.getCalFx(), src.getCalFy(), src.getCalCx(), src.getCalCy())
 
         // Frame block (the reconstruction contract). Override vis_newFrame with the fresh-frame
         // flag: valid AND a new camera timestamp this loop, so replay dedups exactly as the robot
         // does (a valid-but-cached frame is logged as not-new and the replay skips re-processing
         // it).
-        val fm: LinkedHashMap<String, Double> = VisionFrameCsv.toMap(frame, cam, src.calDistCoeffs)
+        val fm: LinkedHashMap<String, Double> =
+            VisionFrameCsv.toMap(frame, cam, src.getCalDistCoeffs())
         val fresh = frame.valid && frame.timestamp != prevFrameTs
         fm["vis_newFrame"] = if (fresh) 1.0 else 0.0
         if (frame.valid) {

@@ -137,7 +137,7 @@ class HypothesisBankRoadRunnerLocalizer : Localizer {
         core.update(clock.asLong, toWpi(odoRr), vel.angVel, source.latest())
 
         if (telemetry != null) {
-            telemetry.addData("bank_committed", core.isCommitted)
+            telemetry.addData("bank_committed", core.isCommitted())
             telemetry.addData("bank_domWeight", String.format("%.2f", core.dominantWeight()))
             telemetry.addData("bank_size", core.bank().size())
         }
@@ -145,7 +145,7 @@ class HypothesisBankRoadRunnerLocalizer : Localizer {
     }
 
     /** Whether the bank has committed (gate auto-aim / trusted-pose cues on this). */
-    fun isCommitted(): Boolean = core.isCommitted
+    fun isCommitted(): Boolean = core.isCommitted()
 
     /** Commitment level: dominant-hypothesis weight in `(0,1]`. */
     fun dominantWeight(): Double = core.dominantWeight()

@@ -55,16 +55,16 @@ class FlywheelStateSpaceTest {
         var firstConvergedSeconds = -1.0
         for (i in 0 until 800) {
             elapsedSeconds += step(flywheel, adapter, sim, rng)
-            if (firstConvergedSeconds < 0 && abs(sim.trueVelocityTps - 2000) < 30) {
+            if (firstConvergedSeconds < 0 && abs(sim.getTrueVelocityTps() - 2000) < 30) {
                 firstConvergedSeconds = elapsedSeconds
             }
         }
         System.out.printf("testSpinUpConverges: within 30 TPS at %.2f s%n", firstConvergedSeconds)
 
-        assertTrue(flywheel.isReady, "isReady() should be true after spin-up converges")
+        assertTrue(flywheel.isReady(), "isReady() should be true after spin-up converges")
         assertEquals(
             2000.0,
-            sim.trueVelocityTps,
+            sim.getTrueVelocityTps(),
             30.0,
             "true velocity should be within 30 TPS of setpoint after 16 s of simulated spin-up",
         )
@@ -84,7 +84,7 @@ class FlywheelStateSpaceTest {
         step(flywheel, adapter, sim, rng)
 
         assertEquals(0.0, adapter.lastPower, "motor power should be zero when target TPS is 0")
-        assertFalse(flywheel.isReady, "isReady() must be false when setpoint is zero")
+        assertFalse(flywheel.isReady(), "isReady() must be false when setpoint is zero")
     }
 
     @Test
@@ -100,7 +100,7 @@ class FlywheelStateSpaceTest {
         for (i in 0 until 800) step(flywheel, adapter, sim, rng)
         assertEquals(
             2000.0,
-            sim.trueVelocityTps,
+            sim.getTrueVelocityTps(),
             30.0,
             "should be near setpoint before disturbance",
         )
@@ -113,10 +113,10 @@ class FlywheelStateSpaceTest {
         sim.setDisturbanceVoltage(0.0)
         for (i in 0 until 300) step(flywheel, adapter, sim, rng)
 
-        assertTrue(flywheel.isReady, "isReady() should be true after disturbance recovery")
+        assertTrue(flywheel.isReady(), "isReady() should be true after disturbance recovery")
         assertEquals(
             2000.0,
-            sim.trueVelocityTps,
+            sim.getTrueVelocityTps(),
             30.0,
             "true velocity should recover within 30 TPS of setpoint after disturbance pulse",
         )
@@ -132,7 +132,7 @@ class FlywheelStateSpaceTest {
         flywheel.setTps(2000.0)
         val rng = FlywheelTestFixture.makeRng()
         for (i in 0 until 800) step(flywheel, adapter, sim, rng)
-        assertEquals(2000.0, sim.trueVelocityTps, 30.0, "should be near 2000 TPS before step")
+        assertEquals(2000.0, sim.getTrueVelocityTps(), 30.0, "should be near 2000 TPS before step")
 
         // Step down to 1000 TPS and allow ~6 s for LQR to settle
         flywheel.setTps(1000.0)
@@ -140,14 +140,14 @@ class FlywheelStateSpaceTest {
 
         System.out.printf(
             "testSetpointStepDown: true vel=%.1f TPS, estimated=%.1f TPS%n",
-            sim.trueVelocityTps,
-            flywheel.estimatedTps,
+            sim.getTrueVelocityTps(),
+            flywheel.getEstimatedTps(),
         )
 
-        assertTrue(flywheel.isReady, "isReady() should be true after settling at new setpoint")
+        assertTrue(flywheel.isReady(), "isReady() should be true after settling at new setpoint")
         assertEquals(
             1000.0,
-            sim.trueVelocityTps,
+            sim.getTrueVelocityTps(),
             30.0,
             "true velocity should be within 30 TPS of new setpoint after step",
         )
@@ -165,8 +165,8 @@ class FlywheelStateSpaceTest {
         // Spin up to steady state
         for (i in 0 until 800) step(flywheel, adapter, sim, rng)
 
-        val estimatedTps = flywheel.estimatedTps
-        val trueTps = sim.trueVelocityTps
+        val estimatedTps = flywheel.getEstimatedTps()
+        val trueTps = sim.getTrueVelocityTps()
         System.out.printf(
             "testKalmanEstimateTracksTrue: estimated=%.1f TPS, true=%.1f TPS%n",
             estimatedTps,
